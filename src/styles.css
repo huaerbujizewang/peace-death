@@ -453,6 +453,64 @@ h3 {
   background: #fbfaf7;
 }
 
+.policyRow {
+  display: block;
+}
+
+.policyRow summary {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(120px, 1.3fr);
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.policyRow summary::-webkit-details-marker {
+  display: none;
+}
+
+.policyRow summary::before {
+  content: "▸";
+  color: #69727c;
+  font-weight: 900;
+}
+
+.policyRow[open] summary::before {
+  content: "▾";
+}
+
+.policyRow summary {
+  grid-template-columns: 18px minmax(110px, 1fr) minmax(120px, 1.3fr);
+}
+
+.policyOptions {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e2dcd2;
+}
+
+.policyOption {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.6fr);
+  gap: 10px;
+  align-items: start;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f4f1ea;
+}
+
+.policyOption.current {
+  background: #e5edf4;
+}
+
+.policyOption span {
+  color: #59636d;
+  line-height: 1.45;
+}
+
 .factionRow {
   grid-template-columns: 14px 1fr 70px 70px;
 }
@@ -893,6 +951,11 @@ textarea {
   .policyRow,
   .factionRow,
   .positionRow {
+    grid-template-columns: 1fr;
+  }
+
+  .policyRow summary,
+  .policyOption {
     grid-template-columns: 1fr;
   }
 

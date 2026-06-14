@@ -472,17 +472,36 @@ function countryPatience(key) {
 function policyRow(policy) {
   const isDm = state.profile.role === "dm";
   const [label, options] = POLICY_CATALOG[policy.policy_key] ?? [policy.policy_key, {}];
-  if (!isDm) {
-    return `<div class="policyRow"><span>${escapeHtml(label)}</span><strong>${escapeHtml(options[policy.option_key] ?? policy.option_key)}</strong></div>`;
-  }
   return `
-    <label class="policyRow">
-      <span>${escapeHtml(label)}</span>
-      <select data-policy="${escapeAttr(policy.policy_key)}">
-        ${Object.entries(options).map(([key, name]) => `<option value="${key}" ${key === policy.option_key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
-      </select>
-    </label>
+    <details class="policyRow">
+      <summary>
+        <span>${escapeHtml(label)}</span>
+        ${isDm ? `
+          <select data-policy="${escapeAttr(policy.policy_key)}">
+            ${Object.entries(options).map(([key, name]) => `<option value="${key}" ${key === policy.option_key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+          </select>
+        ` : `<strong>${escapeHtml(options[policy.option_key] ?? policy.option_key)}</strong>`}
+      </summary>
+      <div class="policyOptions">
+        ${Object.entries(options).map(([key, name]) => `
+          <div class="policyOption ${key === policy.option_key ? "current" : ""}">
+            <strong>${escapeHtml(name)}</strong>
+            <span>${policyEffectText(key)}</span>
+          </div>
+        `).join("")}
+      </div>
+    </details>
   `;
+}
+
+function policyEffectText(optionKey) {
+  const effect = POLICY_EFFECTS[optionKey] ?? {};
+  const parts = [];
+  if (effect.legitimacy) parts.push(`合法性${effect.legitimacy > 0 ? "+" : ""}${effect.legitimacy}%`);
+  if (effect.budget) parts.push(effect.budget > 0 ? "提升一级预算" : "降低一级预算");
+  if (effect.please?.length) parts.push(`取悦：${effect.please.join("、")}`);
+  if (effect.anger?.length) parts.push(`惹恼：${effect.anger.join("、")}`);
+  return parts.length ? parts.join("；") : "无直接数值效果";
 }
 
 function characterPanel() {
@@ -777,18 +796,19 @@ function parliamentDots(rows) {
     { radius: 24, count: 22 },
     { radius: 14, count: 12 },
   ];
-  let index = 0;
-  return rings.map((ring) => {
-    const dots = [];
+  const positions = [];
+  for (const ring of rings) {
     for (let i = 0; i < ring.count; i += 1) {
-      const seat = normalized[index] ?? normalized[normalized.length - 1];
       const angle = Math.PI - (Math.PI * (i + 0.5)) / ring.count;
       const x = centerX + Math.cos(angle) * ring.radius;
       const y = centerY - Math.sin(angle) * ring.radius;
-      dots.push(`<span class="seatDot ${seat.voteClass}" style="left:${x}%; top:${y}%; background:${escapeAttr(seat.color)}" title="${escapeAttr(`${seat.faction} · ${voteClassLabel(seat.voteClass)}`)}"></span>`);
-      index += 1;
+      positions.push({ x, y });
     }
-    return dots.join("");
+  }
+  positions.sort((a, b) => a.x - b.x || b.y - a.y);
+  return positions.map((position, index) => {
+    const seat = normalized[index] ?? normalized[normalized.length - 1];
+    return `<span class="seatDot ${seat.voteClass}" style="left:${position.x}%; top:${position.y}%; background:${escapeAttr(seat.color)}" title="${escapeAttr(`${seat.faction} · ${voteClassLabel(seat.voteClass)}`)}"></span>`;
   }).join("");
 }
 
