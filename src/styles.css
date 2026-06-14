@@ -724,6 +724,15 @@ textarea {
   background: #e0efe6;
 }
 
+.resultBox {
+  display: grid;
+  gap: 4px;
+}
+
+.resultBox strong {
+  font-size: 12px;
+}
+
 .resultBox.private {
   color: #4d3e73;
   background: #e8e2f3;
@@ -777,6 +786,18 @@ textarea {
   border: 1px solid #d8d1c7;
   border-radius: 6px;
   background: #fbfaf7;
+}
+
+.actionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.actionHeader > div {
+  display: grid;
+  gap: 3px;
 }
 
 .actionCard p {
@@ -834,6 +855,37 @@ textarea {
   border: 1px solid #d8d1c7;
   border-radius: 8px;
   background: #fbfaf7;
+}
+
+.recessCard {
+  min-height: 160px;
+  place-items: center;
+  text-align: center;
+  color: #5c6470;
+}
+
+.recessCard h3 {
+  margin: 0;
+  color: #30363d;
+  font-size: 24px;
+}
+
+.dmEditor {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e2dcd2;
+}
+
+.dmEditor summary {
+  cursor: pointer;
+  color: #274c77;
+  font-weight: 900;
+}
+
+.dmEditor form {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .parliamentHeader {

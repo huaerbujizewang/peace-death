@@ -242,6 +242,9 @@ async function loadAll() {
     return;
   }
   state.profile = profile.data;
+  const actionColumns = state.profile.role === "dm"
+    ? "*"
+    : "id, owner_id, turn_number, action_kind, actor_type, actor_id, title, category, target, description, resources, visibility, non_public_reason, requires_approval, status, approved_by, result_public, processed_at, created_at, updated_at";
 
   const queries = await Promise.all([
     supabase.from("game_state").select("*").eq("id", true).maybeSingle(),
@@ -250,7 +253,7 @@ async function loadAll() {
     supabase.from("retainers").select("*").order("created_at"),
     supabase.from("retainer_private").select("*"),
     supabase.from("position_assignments").select("*, positions(*)").order("created_at"),
-    supabase.from("actions").select("*").order("created_at", { ascending: false }),
+    supabase.from("actions").select(actionColumns).order("created_at", { ascending: false }),
     supabase.from("factions").select("*").order("sort_order"),
     supabase.from("social_groups").select("*").order("sort_order"),
     supabase.from("current_policies").select("*").order("policy_key"),
@@ -700,6 +703,7 @@ function characterPanel() {
                 </div>
               `).join("")}
             </div>
+            ${isDm ? dmCharacterEditor(character, stats) : ""}
           </section>
         `;
       }).join("")}
@@ -775,6 +779,55 @@ function characterCreateForm() {
       </div>
     </form>
   `;
+}
+
+function dmCharacterEditor(character, stats) {
+  const skills = stats?.skills ?? {};
+  const skillKeys = Array.from(new Set(["谈判", "演讲", "写作", "法律", "会计", ...Object.keys(skills)]));
+  return `
+    <details class="dmEditor">
+      <summary>DM编辑角色卡</summary>
+      <form data-character-edit="${character.id}">
+        <div class="formRow">
+          <label>姓名<input name="name" value="${escapeAttr(character.name)}"></label>
+          <label>性别<select name="gender">${["男", "女", "其他"].map((value) => `<option ${value === character.gender ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+          <label>年龄<input name="age" type="number" value="${character.age ?? ""}"></label>
+        </div>
+        <div class="formRow">
+          <label>民族<input name="ethnicity" value="${escapeAttr(character.ethnicity)}"></label>
+          <label>信仰<input name="faith" value="${escapeAttr(character.faith)}"></label>
+          <label>政治派系<select name="faction_id">${state.data.factions.filter((f) => f.faction_type === "political").map((f) => `<option value="${f.id}" ${f.id === character.faction_id ? "selected" : ""}>${escapeHtml(f.short_name)}</option>`).join("")}</select></label>
+        </div>
+        <label>公开背景<textarea name="public_background">${escapeHtml(character.public_background ?? "")}</textarea></label>
+        <label>公开特质（每行一个）<textarea name="public_traits">${escapeHtml((character.public_traits ?? []).join("\n"))}</textarea></label>
+        ${stats ? `
+          <h3>属性</h3>
+          <div class="statInputGrid">
+            ${dmStatInput("body", "体质", stats.body)}
+            ${dmStatInput("willpower", "意志", stats.willpower)}
+            ${dmStatInput("wealth", "财富", stats.wealth)}
+            ${dmStatInput("charm", "魅力", stats.charm)}
+            ${dmStatInput("intellect", "智力", stats.intellect)}
+            ${dmStatInput("prestige", "威望", stats.prestige)}
+            ${dmStatInput("perception", "感知", stats.perception)}
+            ${dmStatInput("luck", "幸运", stats.luck)}
+          </div>
+          <h3>技能</h3>
+          <div class="statInputGrid">
+            ${skillKeys.map((skill) => `<label>${escapeHtml(skill)}<input name="skill_${escapeAttr(skill)}" type="number" value="${Number(skills[skill] ?? 10)}"></label>`).join("")}
+          </div>
+          <label>秘密特质（每行一个）<textarea name="secret_traits">${escapeHtml((stats.secret_traits ?? []).join("\n"))}</textarea></label>
+          <label>人生追求<input name="pursuit" value="${escapeAttr(stats.pursuit ?? "")}"></label>
+          <label>黑料（每行：严重度｜内容）<textarea name="scandals">${escapeHtml(scandalLines(stats.scandals).join("\n"))}</textarea></label>
+        ` : `<div class="notice">缺少私密卡，无法编辑属性、技能和黑料。</div>`}
+        <button class="primaryButton" type="button" data-save-character="${character.id}">保存角色修改</button>
+      </form>
+    </details>
+  `;
+}
+
+function dmStatInput(name, label, value) {
+  return `<label>${label}<input name="${name}" type="number" value="${Number(value ?? 0)}"></label>`;
 }
 
 function statInput(name, label, value, min, max, step = 1) {
@@ -861,7 +914,7 @@ function parliamentPanel() {
       <div class="panelHeader"><h2>议会投票</h2><span class="scorePill">100席</span></div>
       ${isDm ? `<div class="inlineForm"><input id="vote-issue" placeholder="议题"><button class="primaryButton" data-action="create-vote">创建投票</button></div>` : ""}
       <div class="parliamentStack">
-        ${voteGroups.length ? voteGroups.map(parliamentVoteCard).join("") : parliamentVoteCard({ issue: "当前席位", turn: state.data.state?.current_turn ?? 1, rows: [] })}
+        ${voteGroups.length ? voteGroups.map(parliamentVoteCard).join("") : `<article class="parliamentCard recessCard"><h3>休会中</h3><span>当前没有议案。</span></article>`}
       </div>
     </section>
   `;
@@ -1045,7 +1098,10 @@ function dmPanel() {
               <strong>${escapeHtml(a.title)}</strong>
               <span>${statusLabel(a.status)} · ${a.action_kind === "private" ? "私人行动" : "政府行动"}</span>
               <p>${escapeHtml(a.description)}</p>
-              <button class="primaryButton" data-process="${a.id}">填写结果并处理</button>
+              <div class="buttonRow">
+                <button class="primaryButton" data-process="${a.id}">填写结果并处理</button>
+                <button class="dangerButton" data-delete-action="${a.id}" data-action-title="${escapeAttr(a.title || "未命名行动")}" type="button">删除</button>
+              </div>
             </article>
           `).join("")}
         </div>
@@ -1087,6 +1143,12 @@ function bindTab() {
   setupCharacterSheetAssistant();
   root.querySelectorAll("[data-delete-character]").forEach((button) => {
     button.addEventListener("click", () => deleteCharacter(button.dataset.deleteCharacter, button.dataset.characterName));
+  });
+  root.querySelectorAll("[data-save-character]").forEach((button) => {
+    button.addEventListener("click", () => saveCharacterEdits(button.dataset.saveCharacter));
+  });
+  root.querySelectorAll("[data-delete-action]").forEach((button) => {
+    button.addEventListener("click", () => deleteAction(button.dataset.deleteAction, button.dataset.actionTitle));
   });
 
   root.querySelectorAll("[data-approve]").forEach((button) => {
@@ -1308,6 +1370,62 @@ async function deleteCharacter(characterId, characterName) {
   else await loadAll();
 }
 
+async function saveCharacterEdits(characterId) {
+  if (state.profile.role !== "dm") return;
+  const form = Array.from(root.querySelectorAll("[data-character-edit]")).find((item) => item.dataset.characterEdit === characterId);
+  if (!form) return;
+  const data = new FormData(form);
+  const publicPatch = {
+    name: String(data.get("name") ?? "").trim(),
+    gender: String(data.get("gender") ?? ""),
+    age: numberField(data, "age"),
+    ethnicity: String(data.get("ethnicity") ?? "").trim(),
+    faith: String(data.get("faith") ?? "").trim(),
+    faction_id: String(data.get("faction_id") ?? ""),
+    public_background: String(data.get("public_background") ?? "").trim(),
+    public_traits: linesFromText(data.get("public_traits")),
+  };
+
+  const publicUpdate = await supabase.from("characters_public").update(publicPatch).eq("id", characterId);
+  if (publicUpdate.error) {
+    alert(publicUpdate.error.message);
+    return;
+  }
+  const hasPrivateStats = state.data.privateStats.some((item) => item.character_id === characterId);
+  if (hasPrivateStats) {
+    const privatePatch = {
+      body: numberField(data, "body"),
+      willpower: numberField(data, "willpower"),
+      wealth: numberField(data, "wealth"),
+      charm: numberField(data, "charm"),
+      intellect: numberField(data, "intellect"),
+      prestige: numberField(data, "prestige"),
+      perception: numberField(data, "perception"),
+      luck: numberField(data, "luck"),
+      skills: skillValuesFromForm(data),
+      secret_traits: linesFromText(data.get("secret_traits")),
+      pursuit: String(data.get("pursuit") ?? "").trim(),
+      scandals: scandalsFromText(data.get("scandals")),
+    };
+    privatePatch.scandal_count = privatePatch.scandals.length;
+    const privateUpdate = await supabase.from("character_private").update(privatePatch).eq("character_id", characterId);
+    if (privateUpdate.error) {
+      alert(privateUpdate.error.message);
+      return;
+    }
+  }
+  alert("角色卡已保存。");
+  await loadAll();
+}
+
+async function deleteAction(actionId, actionTitle) {
+  if (state.profile.role !== "dm") return;
+  if (!confirm(`确定删除行动“${actionTitle || "未命名行动"}”吗？`)) return;
+  const { error } = await supabase.from("actions").delete().eq("id", actionId);
+  if (error) alert(error.message);
+  else await loadAll();
+}
+
 function validateCharacterDraft(character, attributes, publicTraits, secretTraits, pursuit, retainers) {
   const errors = [];
   if (!character.name) errors.push("姓名不能为空。");
@@ -1423,6 +1541,41 @@ function parseRetainers(text) {
       return { name, gender, age: Number(age) || null, notes: notes.join("，") };
     })
     .filter((retainer) => retainer.name);
+}
+
+function linesFromText(text) {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function skillValuesFromForm(data) {
+  const skills = {};
+  for (const [key, value] of data.entries()) {
+    if (!key.startsWith("skill_")) continue;
+    skills[key.slice("skill_".length)] = Number(value ?? 10);
+  }
+  return skills;
+}
+
+function scandalsFromText(text) {
+  return linesFromText(text).map((line) => {
+    const [severity = "可大可小", ...rest] = line.split(/[|｜]/);
+    return {
+      severity: severity.trim() || "可大可小",
+      text: rest.join("｜").trim(),
+      added_at: new Date().toISOString(),
+    };
+  }).filter((item) => item.text);
+}
+
+function scandalLines(scandals) {
+  if (!Array.isArray(scandals)) return [];
+  return scandals.map((item) => {
+    if (Array.isArray(item)) return `${item[0] ?? "可大可小"}｜${item[1] ?? ""}`;
+    return `${item.severity ?? "可大可小"}｜${item.text ?? ""}`;
+  }).filter((line) => !line.endsWith("｜"));
 }
 
 async function advancePhase() {
@@ -1624,12 +1777,16 @@ function tagBlock(title, items = []) {
 }
 
 function actionCard(action) {
+  const canSeePrivate = state.profile.role === "dm";
   return `
     <article class="actionCard">
-      <div><strong>${escapeHtml(action.title || "未命名行动")}</strong><span>${statusLabel(action.status)} · 第${action.turn_number}回合 · ${action.action_kind === "government" ? (action.visibility === "public" ? "公开政府行动" : "不公开政府行动") : "私人行动"}</span></div>
+      <div class="actionHeader">
+        <div><strong>${escapeHtml(action.title || "未命名行动")}</strong><span>${statusLabel(action.status)} · 第${action.turn_number}回合 · ${action.action_kind === "government" ? (action.visibility === "public" ? "公开政府行动" : "不公开政府行动") : "私人行动"}</span></div>
+        ${state.profile.role === "dm" ? `<button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>` : ""}
+      </div>
       <p>${escapeHtml(action.description)}</p>
-      ${action.result_public ? `<div class="resultBox">${escapeHtml(action.result_public)}</div>` : ""}
-      ${action.result_private ? `<div class="resultBox private">${escapeHtml(action.result_private)}</div>` : ""}
+      ${action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
+      ${canSeePrivate && action.result_private ? `<div class="resultBox private"><strong>私密结果（仅DM可见）</strong><span>${escapeHtml(action.result_private)}</span></div>` : ""}
     </article>
   `;
 }
