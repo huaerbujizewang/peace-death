@@ -1,0 +1,10 @@
+{
+  "name": "peace-death-trpg",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "python -m http.server 5173",
+    "dev:bundled": "\"C:\\Users\\73947\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe\" -m http.server 5173"
+  }
+}
