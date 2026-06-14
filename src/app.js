@@ -486,7 +486,7 @@ function policyRow(policy) {
         ${Object.entries(options).map(([key, name]) => `
           <div class="policyOption ${key === policy.option_key ? "current" : ""}">
             <strong>${escapeHtml(name)}</strong>
-            <span>${policyEffectText(key)}</span>
+            <span>${policyEffectText(policy.policy_key, key)}</span>
           </div>
         `).join("")}
       </div>
@@ -494,14 +494,132 @@ function policyRow(policy) {
   `;
 }
 
-function policyEffectText(optionKey) {
-  const effect = POLICY_EFFECTS[optionKey] ?? {};
-  const parts = [];
-  if (effect.legitimacy) parts.push(`合法性${effect.legitimacy > 0 ? "+" : ""}${effect.legitimacy}%`);
-  if (effect.budget) parts.push(effect.budget > 0 ? "提升一级预算" : "降低一级预算");
-  if (effect.please?.length) parts.push(`取悦：${effect.please.join("、")}`);
-  if (effect.anger?.length) parts.push(`惹恼：${effect.anger.join("、")}`);
-  return parts.length ? parts.join("；") : "无直接数值效果";
+function policyEffectText(policyKey, optionKey) {
+  const details = {
+    "regime.dual_monarchy": [
+      "公爵威望每比50多5，政府合法性+1%；反之-1%",
+      "首相威望每比50多5，政府合法性+1%；反之-1%",
+    ],
+    "regime.ceremonial_monarchy": [
+      "合法性+5%",
+      "首相威望每比50多5，政府合法性+1%；反之-1%",
+    ],
+    "regime.parliamentary_republic": ["合法性+5%", "惹恼：地主贵族"],
+    "regime.presidential_republic": [
+      "首相威望每比50多1，政府合法性+1%；反之-1%",
+      "惹恼：地主贵族",
+    ],
+    "regime.military_government": [
+      "战争部长威望每比50多1，政府合法性+1%；反之-1%",
+      "取悦：士兵",
+    ],
+    "civil_service.independent": ["合法性+5%"],
+    "civil_service.bureaucrats_in_politics": [
+      "在政府中的政治派系提供的合法性翻倍",
+      "惹恼：保守知识分子",
+    ],
+    "civil_service.free_participation": [
+      "在政府中的政治派系提供的合法性翻倍",
+      "不在政府中的政治派系降低的合法性翻倍",
+      "军队发动政变前置要求改为合法性＜50%",
+      "惹恼：保守知识分子",
+      "取悦：士兵、地主贵族、大约尔派、大卡兰克派",
+    ],
+    "tax.single_tax": ["无直接数值效果"],
+    "tax.regressive": [
+      "降低一级预算",
+      "有10%的概率使经济形势上行",
+      "取悦：资本家、地主贵族",
+      "惹恼：产业工人、农民、士兵",
+    ],
+    "tax.progressive": [
+      "提升一级预算",
+      "有10%的概率使经济形势下行",
+      "取悦：产业工人",
+      "惹恼：资本家、地主贵族",
+    ],
+    "economy.laissez_faire": [
+      "合法性+5%",
+      "取悦：资本家、地主贵族",
+      "惹恼：农民",
+    ],
+    "economy.intervention": ["无直接数值效果"],
+    "economy.heavy_intervention": ["合法性-5%", "惹恼：资本家、地主贵族"],
+    "assembly.banned": [
+      "合法性+5%",
+      "惹恼：进步知识分子",
+      "惹恼所有在政府中没有职位的政治派系的支持者",
+    ],
+    "assembly.registered": ["合法性+3%"],
+    "assembly.free": ["取悦：进步知识分子"],
+    "media.state_media": [
+      "合法性+5%",
+      "惹恼：进步知识分子",
+      "惹恼所有在政府中没有职位的政治派系的支持者",
+    ],
+    "media.limited_censorship": ["合法性+3%"],
+    "media.free_media": [
+      "取悦：进步知识分子",
+      "所有玩家每回合进行一次幸运检定，看你有没有被挖出黑料",
+    ],
+    "religion.secularization": [
+      "合法性+5%",
+      "取悦：进步知识分子",
+      "惹恼：保守知识分子",
+    ],
+    "religion.state_church": [
+      "合法性+10%",
+      "取悦：大卡兰克派",
+      "惹恼：进步知识分子、大约尔派",
+    ],
+    "religion.state_valler": [
+      "合法性+10%",
+      "取悦：大约尔派",
+      "惹恼：进步知识分子、大卡兰克派",
+    ],
+    "religion.pluralism": ["无直接数值效果"],
+    "army_pay.docked": ["提升一级预算", "惹恼：士兵"],
+    "army_pay.basic": ["无直接数值效果"],
+    "army_pay.welfare": ["降低一级预算", "取悦：士兵"],
+    "welfare.poor": ["提升一级预算", "惹恼：产业工人、农民、士兵"],
+    "welfare.basic": ["合法性+5%"],
+    "welfare.strong": [
+      "合法性+10%",
+      "降低一级预算",
+      "取悦：产业工人、农民、士兵",
+    ],
+    "labor.eight_hours": [
+      "有10%的概率使经济形势下行",
+      "取悦：产业工人",
+      "惹恼：资本家",
+    ],
+    "labor.ten_hours": ["无直接数值效果"],
+    "labor.twelve_hours": [
+      "有10%的概率使经济形势上行",
+      "取悦：资本家",
+      "惹恼：产业工人",
+    ],
+    "labor.fourteen_hours": [
+      "有10%的概率使经济形势上行",
+      "取悦：资本家",
+      "惹恼：产业工人",
+    ],
+    "women.ignored": ["无直接数值效果"],
+    "women.formal_equality": ["取悦：进步知识分子", "惹恼：保守知识分子"],
+    "women.active_equality": ["取悦：进步知识分子", "惹恼：保守知识分子"],
+    "nationality.lurik_exception": ["无直接数值效果"],
+    "nationality.karank_first": [
+      "合法性+5%",
+      "取悦：大卡兰克派",
+      "惹恼：大约尔派",
+    ],
+    "nationality.yor_first": [
+      "合法性+5%",
+      "取悦：大约尔派",
+      "惹恼：大卡兰克派",
+    ],
+  };
+  return (details[`${policyKey}.${optionKey}`] ?? ["无直接数值效果"]).join("；");
 }
 
 function characterPanel() {
