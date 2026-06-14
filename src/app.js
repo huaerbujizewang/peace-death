@@ -357,10 +357,32 @@ function phaseStrip() {
   return `
     <section class="phaseStrip">
       <div><span>第 ${state.data.state?.current_turn ?? 1} 回合</span><strong>${phaseLabel(current)}</strong></div>
+      ${foreignPatienceStrip()}
       <div class="phaseSteps">
         ${PHASES.map(([key, label]) => `<span class="phaseStep ${key === current ? "active" : ""}">${label}</span>`).join("")}
       </div>
     </section>
+  `;
+}
+
+function foreignPatienceStrip() {
+  const karank = countryPatience("karank") ?? 0;
+  const royer = countryPatience("royer") ?? 0;
+  return `
+    <div class="patienceStrip">
+      ${patienceMeter("卡兰克", karank)}
+      ${patienceMeter("罗伊尔", royer)}
+    </div>
+  `;
+}
+
+function patienceMeter(name, value) {
+  return `
+    <div class="patienceMeter">
+      <span>${escapeHtml(name)}</span>
+      <strong>耐心 ${value} / 100</strong>
+      <i><em style="width:${Math.max(0, Math.min(100, value))}%"></em></i>
+    </div>
   `;
 }
 
@@ -420,13 +442,11 @@ function countryIntelGrid() {
   return `
     <div class="countryGrid">
       ${Object.entries(COUNTRY_INTEL).map(([key, country]) => {
-        const patience = countryPatience(key);
         return `
           <button class="countryCard ${state.selectedCountry === key ? "active" : ""}" data-country="${key}" type="button">
             <img src="${country.flag}" alt="${escapeAttr(country.name)}旗帜">
             <strong>${escapeHtml(country.name)}</strong>
-            <span>${patience === null ? "情报" : patienceLabel(patience)}</span>
-            ${patience === null ? "" : `<i class="patienceBar"><em style="width:${Math.max(0, Math.min(100, patience))}%"></em></i>`}
+            <span>情报</span>
           </button>
         `;
       }).join("")}
@@ -447,12 +467,6 @@ function countryPatience(key) {
   const aliases = { karank: "karank", royer: "royer" };
   const power = state.data.foreignPowers.find((p) => p.key === aliases[key]);
   return power ? Number(power.patience) : null;
-}
-
-function patienceLabel(value) {
-  if (value <= 10) return `耐心 ${value} · 干涉边缘`;
-  if (value <= 30) return `耐心 ${value} · 高压`;
-  return `耐心 ${value}`;
 }
 
 function policyRow(policy) {
