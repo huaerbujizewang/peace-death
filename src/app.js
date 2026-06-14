@@ -425,7 +425,8 @@ function countryIntelGrid() {
           <button class="countryCard ${state.selectedCountry === key ? "active" : ""}" data-country="${key}" type="button">
             <img src="${country.flag}" alt="${escapeAttr(country.name)}旗帜">
             <strong>${escapeHtml(country.name)}</strong>
-            <span>${patience === null ? "情报" : `耐心 ${patience}`}</span>
+            <span>${patience === null ? "情报" : patienceLabel(patience)}</span>
+            ${patience === null ? "" : `<i class="patienceBar"><em style="width:${Math.max(0, Math.min(100, patience))}%"></em></i>`}
           </button>
         `;
       }).join("")}
@@ -446,6 +447,12 @@ function countryPatience(key) {
   const aliases = { karank: "karank", royer: "royer" };
   const power = state.data.foreignPowers.find((p) => p.key === aliases[key]);
   return power ? Number(power.patience) : null;
+}
+
+function patienceLabel(value) {
+  if (value <= 10) return `耐心 ${value} · 干涉边缘`;
+  if (value <= 30) return `耐心 ${value} · 高压`;
+  return `耐心 ${value}`;
 }
 
 function policyRow(policy) {

@@ -53,8 +53,8 @@ on conflict (name) do update set mood = excluded.mood;
 
 insert into public.foreign_powers (key, name, patience)
 values
-  ('royer', '罗伊尔帝国', 100),
-  ('karank', '卡兰克帝国', 100)
+  ('royer', '罗伊尔帝国', 30),
+  ('karank', '卡兰克帝国', 30)
 on conflict (key) do update set patience = excluded.patience;
 
 insert into public.current_policies (policy_key, option_key)
