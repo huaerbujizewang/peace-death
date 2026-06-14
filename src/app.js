@@ -504,9 +504,12 @@ function policyRow(policy) {
       <summary>
         <span>${escapeHtml(label)}</span>
         ${isDm ? `
-          <select data-policy="${escapeAttr(policy.policy_key)}">
+          <div class="policyEditor">
+            <select data-policy-draft="${escapeAttr(policy.policy_key)}" data-current="${escapeAttr(policy.option_key)}">
             ${Object.entries(options).map(([key, name]) => `<option value="${key}" ${key === policy.option_key ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
-          </select>
+            </select>
+            <button class="ghostButton" type="button" data-policy-save="${escapeAttr(policy.policy_key)}">确认更改</button>
+          </div>
         ` : `<strong>${escapeHtml(options[policy.option_key] ?? policy.option_key)}</strong>`}
       </summary>
       <div class="policyOptions">
@@ -884,10 +887,10 @@ function parliamentVoteCard(group) {
         ${parliamentDots(group.rows)}
       </div>
       <div class="voteLegend">
-        ${state.data.factions.filter((f) => f.faction_type === "political").map((f) => `<span><i style="background:${escapeAttr(f.color)}"></i>${escapeHtml(f.short_name)}</span>`).join("")}
+        ${sortedPoliticalFactions().map((f) => `<span><i style="background:${escapeAttr(f.color)}"></i>${escapeHtml(f.short_name)}</span>`).join("")}
       </div>
       <div class="voteTable">
-        ${group.rows.map((rawVote) => {
+        ${sortedVoteRows(group.rows).map((rawVote) => {
           const v = normalizedVoteRow(rawVote);
           return `
           <div class="voteRow">
@@ -921,7 +924,9 @@ function groupedVotes() {
     if (!groups.has(key)) groups.set(key, { issue: vote.issue, turn: vote.turn_number, rows: [] });
     groups.get(key).rows.push(vote);
   }
-  return Array.from(groups.values()).sort((a, b) => b.turn - a.turn);
+  return Array.from(groups.values())
+    .map((group) => ({ ...group, rows: sortedVoteRows(group.rows) }))
+    .sort((a, b) => b.turn - a.turn || a.issue.localeCompare(b.issue, "zh-Hans-CN"));
 }
 
 function voteTotals(rows) {
@@ -935,7 +940,7 @@ function voteTotals(rows) {
 function parliamentDots(rows) {
   const seats = [];
   const rowByFaction = new Map(rows.map((row) => [row.faction_id, normalizedVoteRow(row)]));
-  for (const faction of state.data.factions.filter((f) => f.faction_type === "political")) {
+  for (const faction of sortedPoliticalFactions()) {
     const row = rowByFaction.get(faction.id);
     const seatCount = row ? Number(row.seats) : Math.round(Number(faction.influence));
     const votes = row
@@ -946,10 +951,12 @@ function parliamentDots(rows) {
         ]
       : [["neutral", seatCount]];
     for (const [voteClass, count] of votes) {
-      for (let i = 0; i < count; i += 1) seats.push({ color: faction.color, faction: faction.short_name, voteClass });
+      for (let i = 0; i < count; i += 1) seats.push({ color: faction.color, faction: faction.short_name, factionOrder: factionOrder(faction.id), voteClass });
     }
   }
-  const normalized = seats.slice(0, 100);
+  const normalized = seats
+    .sort((a, b) => voteClassOrder(a.voteClass) - voteClassOrder(b.voteClass) || a.factionOrder - b.factionOrder)
+    .slice(0, 100);
   while (normalized.length < 100) normalized.push({ color: "#b9b3aa", faction: "空席", voteClass: "neutral" });
   const centerX = 50;
   const centerY = 50;
@@ -965,10 +972,10 @@ function parliamentDots(rows) {
       const angle = Math.PI - (Math.PI * (i + 0.5)) / ring.count;
       const x = centerX + Math.cos(angle) * ring.radius;
       const y = centerY - Math.sin(angle) * ring.radius;
-      positions.push({ x, y });
+      positions.push({ x, y, ringIndex: rings.indexOf(ring), seatIndex: i });
     }
   }
-  positions.sort((a, b) => a.x - b.x || b.y - a.y);
+  positions.sort((a, b) => a.x - b.x || a.ringIndex - b.ringIndex || b.y - a.y || a.seatIndex - b.seatIndex);
   return positions.map((position, index) => {
     const seat = normalized[index] ?? normalized[normalized.length - 1];
     return `<span class="seatDot ${seat.voteClass}" style="left:${position.x}%; top:${position.y}%; background:${escapeAttr(seat.color)}" title="${escapeAttr(`${seat.faction} · ${voteClassLabel(seat.voteClass)}`)}"></span>`;
@@ -1065,11 +1072,11 @@ function bindCommon() {
 }
 
 function bindTab() {
-  root.querySelectorAll("[data-policy]").forEach((select) => {
-    select.addEventListener("change", async () => {
-      await supabase.from("current_policies").update({ option_key: select.value }).eq("policy_key", select.dataset.policy);
-      loadAll();
-    });
+  root.querySelectorAll(".policyEditor").forEach((editor) => {
+    editor.addEventListener("click", (event) => event.stopPropagation());
+  });
+  root.querySelectorAll("[data-policy-save]").forEach((button) => {
+    button.addEventListener("click", () => savePolicyChange(button.dataset.policySave));
   });
 
   root.querySelectorAll("[data-action-save]").forEach((button) => {
@@ -1463,6 +1470,25 @@ async function saveState() {
   else loadAll();
 }
 
+async function savePolicyChange(policyKey) {
+  const select = Array.from(root.querySelectorAll("[data-policy-draft]")).find((item) => item.dataset.policyDraft === policyKey);
+  if (!select) return;
+  const current = select.dataset.current;
+  const next = select.value;
+  if (next === current) {
+    alert("政策没有变化。");
+    return;
+  }
+  const [policyLabel, options] = POLICY_CATALOG[policyKey] ?? [policyKey, {}];
+  if (!confirm(`确认将${policyLabel}改为「${options[next] ?? next}」吗？`)) {
+    select.value = current;
+    return;
+  }
+  const { error } = await supabase.from("current_policies").update({ option_key: next }).eq("policy_key", policyKey);
+  if (error) alert(error.message);
+  else loadAll();
+}
+
 async function assignPosition() {
   const [entityType, entityId] = document.getElementById("assign-entity").value.split(":");
   const positionId = document.getElementById("assign-position").value;
@@ -1474,7 +1500,7 @@ async function assignPosition() {
 async function createVote() {
   const issue = document.getElementById("vote-issue").value.trim();
   if (!issue) return;
-  const rows = state.data.factions.filter((f) => f.faction_type === "political").map((f) => ({
+  const rows = sortedPoliticalFactions().map((f) => ({
     issue,
     turn_number: state.data.state?.current_turn ?? 1,
     faction_id: f.id,
@@ -1576,7 +1602,11 @@ async function addScandalToSelected(item) {
     .update({ scandals: next, scandal_count: next.length })
     .eq("character_id", characterId);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    const character = state.data.characters.find((item) => item.id === characterId);
+    alert(`已给${character?.name ?? "该角色"}添加黑料：${item[0]}：${item[1]}`);
+    loadAll();
+  }
 }
 
 function metric(label, value) {
@@ -1782,6 +1812,26 @@ function assignmentMap() {
 
 function factionName(id) {
   return state.data.factions.find((f) => f.id === id)?.short_name ?? "未定";
+}
+
+function sortedPoliticalFactions() {
+  return state.data.factions
+    .filter((faction) => faction.faction_type === "political")
+    .slice()
+    .sort((a, b) => factionOrder(a.id) - factionOrder(b.id) || Number(b.influence ?? 0) - Number(a.influence ?? 0) || a.short_name.localeCompare(b.short_name, "zh-Hans-CN"));
+}
+
+function sortedVoteRows(rows) {
+  return rows.slice().sort((a, b) => factionOrder(a.faction_id) - factionOrder(b.faction_id));
+}
+
+function factionOrder(id) {
+  const faction = state.data.factions.find((item) => item.id === id);
+  return Number(faction?.sort_order ?? 999);
+}
+
+function voteClassOrder(value) {
+  return { yes: 0, no: 1, abstain: 2, neutral: 3 }[value] ?? 9;
 }
 
 function characterOptions() {
