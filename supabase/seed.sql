@@ -1,6 +1,6 @@
 insert into public.game_state (id, current_turn, current_phase, legitimacy_base, economy_status, budget_status)
-values (true, 1, 'turn_start', 12, '一切如常', '平衡')
-on conflict (id) do nothing;
+values (true, 1, 'turn_start', 33, '一切如常', '平衡')
+on conflict (id) do update set legitimacy_base = excluded.legitimacy_base;
 
 insert into public.factions (key, name, short_name, faction_type, influence, color, supporters, sort_order)
 values
@@ -53,8 +53,8 @@ on conflict (name) do update set mood = excluded.mood;
 
 insert into public.foreign_powers (key, name, patience)
 values
-  ('royer', '罗伊尔帝国', 30),
-  ('karank', '卡兰克帝国', 30)
+  ('royer', '罗伊尔帝国', 100),
+  ('karank', '卡兰克帝国', 100)
 on conflict (key) do update set patience = excluded.patience;
 
 insert into public.current_policies (policy_key, option_key)

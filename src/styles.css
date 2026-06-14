@@ -100,6 +100,86 @@ h3 {
   flex-wrap: wrap;
 }
 
+.countryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.countryCard {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 70px;
+  padding: 8px;
+  border: 1px solid #d8d1c7;
+  border-radius: 6px;
+  color: #30363d;
+  background: #fbfaf7;
+  text-align: left;
+}
+
+.countryCard.active {
+  border-color: #274c77;
+  box-shadow: 0 0 0 2px rgba(39, 76, 119, 0.14);
+}
+
+.countryCard img {
+  grid-row: 1 / 3;
+  width: 48px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.countryCard strong {
+  font-size: 14px;
+}
+
+.countryCard span {
+  color: #7d2b36;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.intelPanel {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid #d8d1c7;
+  border-radius: 6px;
+  background: #fbfaf7;
+}
+
+.intelPanel img {
+  width: 130px;
+  height: 86px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.intelPanel h3 {
+  margin-top: 0;
+}
+
+.intelPanel strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #274c77;
+}
+
+.intelPanel p {
+  margin-bottom: 8px;
+  line-height: 1.6;
+  color: #48515a;
+}
+
 .primaryButton,
 .ghostButton,
 .dangerButton,
@@ -702,6 +782,14 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .countryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .intelPanel {
+    grid-template-columns: 1fr;
+  }
+
   .voteRow {
     grid-template-columns: 1fr 1fr;
   }
@@ -730,6 +818,10 @@ textarea {
   .policyRow,
   .factionRow,
   .positionRow {
+    grid-template-columns: 1fr;
+  }
+
+  .countryGrid {
     grid-template-columns: 1fr;
   }
 }

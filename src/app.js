@@ -38,6 +38,37 @@ const SECRET_TRAITS = [
 
 const PURSUITS = ["利益至上", "权力至上", "国家至上", "理想至上"];
 
+const COUNTRY_INTEL = {
+  karank: {
+    name: "卡兰克",
+    flag: "./卡兰克.png",
+    government: "共和国，总统执政",
+    summary: "大陆西侧强权，卢里孔圣会派与卡兰克裔社群天然受其牵动。它公开主张地区稳定，私下关注蓝隼党和亲卡兰克舆论。",
+    pressure: "若卢里孔政局失控，卡兰克会以保护本国侨民、教会和边境安全为由施压。",
+  },
+  royer: {
+    name: "罗伊尔",
+    flag: "./罗伊尔.png",
+    government: "帝国，皇帝统治",
+    summary: "大陆中部强权，约尔民族主义者的天然靠山。它不愿看到卡兰克重新控制卢里孔，也不愿公国成为众治主义样板。",
+    pressure: "若卡兰克影响力过强或约尔派遭到镇压，罗伊尔会迅速提高军事与外交压力。",
+  },
+  deno: {
+    name: "德诺",
+    flag: "./德诺.png",
+    government: "议会君主制，海外情报局活跃",
+    summary: "隔海强权，擅长调停和情报渗透。德诺不一定亲自下场，但乐于让大陆强国彼此牵制。",
+    pressure: "德诺更偏向暗中收集情报、提供避难渠道，必要时把卢里孔问题推上国际会议桌。",
+  },
+  lurik: {
+    name: "卢里孔",
+    flag: "./卢里孔.png",
+    government: "二元君主立宪制，摄政内阁临时执政",
+    summary: "卡兰克与罗伊尔之间的缓冲公国。公爵遇刺后，议会解散、政府合法性低迷，各派都在争夺一月大选前的主动权。",
+    pressure: "卢里孔没有强权余裕；合法性、群体情绪和两大国耐心会共同决定它还能不能维持和平。",
+  },
+};
+
 const POLICY_CATALOG = {
   regime: ["政体", { dual_monarchy: "二元君主立宪制", ceremonial_monarchy: "虚位君主立宪制", parliamentary_republic: "议会共和制", presidential_republic: "总统共和制", military_government: "军政府" }],
   civil_service: ["公务员制度", { independent: "公务员系统独立", bureaucrats_in_politics: "允许文官参政", free_participation: "允许自由参政" }],
@@ -131,6 +162,7 @@ let state = {
   session: null,
   profile: null,
   tab: "overview",
+  selectedCountry: "karank",
   error: "",
   data: emptyData(),
 };
@@ -364,7 +396,7 @@ function overview() {
       <section class="panel">
         <h2>派系与社会</h2>
         <div class="factionList">
-          ${state.data.factions.map((f) => `
+          ${state.data.factions.filter((f) => f.faction_type === "political").map((f) => `
             <div class="factionRow">
               <span class="swatch" style="background:${escapeAttr(f.color)}"></span>
               <strong>${escapeHtml(f.short_name)}</strong>
@@ -376,12 +408,44 @@ function overview() {
         <div class="moodGrid">
           ${state.data.groups.map((g) => `<span class="mood ${g.mood <= -1 ? "low" : g.mood === 2 ? "high" : ""}">${escapeHtml(g.name)}：${moodLabel(g.mood)}</span>`).join("")}
         </div>
-        <div class="foreignRow">
-          ${state.data.foreignPowers.map((p) => metric(p.name, `耐心 ${p.patience}`)).join("")}
-        </div>
+        <h3>国家情报</h3>
+        ${countryIntelGrid()}
       </section>
     </div>
   `;
+}
+
+function countryIntelGrid() {
+  const selected = COUNTRY_INTEL[state.selectedCountry] ?? COUNTRY_INTEL.karank;
+  return `
+    <div class="countryGrid">
+      ${Object.entries(COUNTRY_INTEL).map(([key, country]) => {
+        const patience = countryPatience(key);
+        return `
+          <button class="countryCard ${state.selectedCountry === key ? "active" : ""}" data-country="${key}" type="button">
+            <img src="${country.flag}" alt="${escapeAttr(country.name)}旗帜">
+            <strong>${escapeHtml(country.name)}</strong>
+            <span>${patience === null ? "情报" : `耐心 ${patience}`}</span>
+          </button>
+        `;
+      }).join("")}
+    </div>
+    <article class="intelPanel">
+      <img src="${selected.flag}" alt="${escapeAttr(selected.name)}旗帜">
+      <div>
+        <h3>${escapeHtml(selected.name)}</h3>
+        <strong>${escapeHtml(selected.government)}</strong>
+        <p>${escapeHtml(selected.summary)}</p>
+        <p>${escapeHtml(selected.pressure)}</p>
+      </div>
+    </article>
+  `;
+}
+
+function countryPatience(key) {
+  const aliases = { karank: "karank", royer: "royer" };
+  const power = state.data.foreignPowers.find((p) => p.key === aliases[key]);
+  return power ? Number(power.patience) : null;
 }
 
 function policyRow(policy) {
@@ -462,7 +526,7 @@ function characterCreateForm() {
       ${state.profile.role === "dm" ? `<label>归属账号<select name="owner_id">${playerOptions}</select></label>` : ""}
       <div class="formRow">
         <label>姓名<input name="name" required></label>
-        <label>性别<input name="gender"></label>
+        <label>性别<select name="gender"><option>男</option><option>女</option><option>其他</option></select></label>
         <label>年龄<input name="age" type="number" min="1" value="40"></label>
       </div>
       <div class="formRow">
@@ -544,7 +608,6 @@ function actionPanel() {
           <label>描述<textarea name="description"></textarea></label>
           <label>使用资源 / 特质 / 备注<textarea name="resources"></textarea></label>
           <div class="toggleRow">
-            <label><input name="requires_approval" type="checkbox"> 需要公爵或首相批准</label>
             <label><input name="public_government" type="checkbox"> 政府行动公开完整内容</label>
           </div>
           <label>不公开理由<input name="non_public_reason"></label>
@@ -746,6 +809,12 @@ function bindCommon() {
   });
   root.querySelector('[data-action="refresh"]')?.addEventListener("click", loadAll);
   root.querySelector('[data-action="logout"]')?.addEventListener("click", () => supabase.auth.signOut());
+  root.querySelectorAll("[data-country]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedCountry = button.dataset.country;
+      render();
+    });
+  });
 }
 
 function bindTab() {
@@ -802,11 +871,8 @@ async function saveAction(mode) {
     alert("政府行动不公开必须填写理由。");
     return;
   }
-  const status = mode === "draft"
-    ? "draft"
-    : actionKind === "government" && data.get("requires_approval")
-      ? "needs_approval"
-      : "submitted";
+  const needsApproval = actionKind === "government" && !isGovernmentHead();
+  const status = mode === "draft" ? "draft" : needsApproval ? "needs_approval" : "submitted";
   const { error } = await supabase.from("actions").insert({
     owner_id: state.profile.id,
     turn_number: state.data.state?.current_turn ?? 1,
@@ -820,7 +886,7 @@ async function saveAction(mode) {
     resources: data.get("resources"),
     visibility: actionKind === "private" ? "private" : isPublic ? "public" : "private",
     non_public_reason: reason,
-    requires_approval: Boolean(data.get("requires_approval")),
+    requires_approval: needsApproval,
     status,
   });
   if (error) alert(error.message);
@@ -917,6 +983,7 @@ async function deleteCharacter(characterId, characterName) {
 function validateCharacterDraft(character, attributes, publicTraits, secretTraits, pursuit, retainers) {
   const errors = [];
   if (!character.name) errors.push("姓名不能为空。");
+  if (!["男", "女", "其他"].includes(character.gender)) errors.push("性别只能选择男、女或其他。");
   if (!pursuit || !PURSUITS.includes(pursuit)) errors.push("必须选择一个人生追求。");
   const attributeErrors = validateAttributes(character, attributes, publicTraits);
   errors.push(...attributeErrors);
@@ -1153,17 +1220,13 @@ function entityOptions() {
 }
 
 function calculateLegitimacy() {
-  let total = Number(state.data.state?.legitimacy_base ?? 12) + Number(state.data.state?.legitimacy_modifier ?? 0);
-  for (const policy of state.data.policies) {
-    total += Number(POLICY_EFFECTS[policy.option_key]?.legitimacy ?? 0);
-  }
+  let total = Number(state.data.state?.legitimacy_base ?? 33) + Number(state.data.state?.legitimacy_modifier ?? 0);
   for (const group of state.data.groups) {
     if (Number(group.mood) === 2) total += 5;
     if (Number(group.mood) === -2) total -= 5;
   }
   for (const faction of state.data.factions.filter((f) => f.faction_type === "political" && f.key !== "unaligned")) {
-    if (Number(faction.government_positions) > 0) total += Number(faction.influence) / 8;
-    else total -= Number(faction.influence) / 2;
+    if (faction.key === "social_democrats" && Number(faction.government_positions) === 0) total -= Number(faction.influence) / 2;
   }
   return Math.round(total * 10) / 10;
 }

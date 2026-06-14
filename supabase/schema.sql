@@ -111,7 +111,7 @@ create table if not exists public.game_state (
   current_turn integer not null default 1,
   max_turns integer not null default 5,
   current_phase text not null default 'turn_start',
-  legitimacy_base numeric not null default 12,
+  legitimacy_base numeric not null default 33,
   legitimacy_modifier numeric not null default 0,
   economy_status text not null default '一切如常',
   budget_status text not null default '平衡',
