@@ -429,6 +429,41 @@ h3 {
   font-size: 18px;
 }
 
+.legitimacyLedger {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.ledgerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid #e2dcd2;
+  border-radius: 6px;
+  color: #4b545d;
+  background: #f7f4ee;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ledgerRow strong {
+  color: #5c6470;
+  white-space: nowrap;
+}
+
+.ledgerRow.positive strong {
+  color: #1f6b45;
+}
+
+.ledgerRow.negative strong {
+  color: #9b2332;
+}
+
 .policyList,
 .factionList,
 .positionList,
@@ -907,7 +942,8 @@ textarea {
 
   .statGrid,
   .statGrid.compact,
-  .statInputGrid {
+  .statInputGrid,
+  .legitimacyLedger {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -944,7 +980,8 @@ textarea {
 
   .statGrid,
   .statGrid.compact,
-  .statInputGrid {
+  .statInputGrid,
+  .legitimacyLedger {
     grid-template-columns: 1fr;
   }
 

@@ -118,6 +118,25 @@ const POLICY_EFFECTS = {
   yor_first: { legitimacy: 5, please: ["大约尔派"], anger: ["大卡兰克派"] },
 };
 
+const POLICY_LEGITIMACY = {
+  "regime.ceremonial_monarchy": 5,
+  "regime.parliamentary_republic": 5,
+  "civil_service.independent": 5,
+  "economy.laissez_faire": 5,
+  "economy.heavy_intervention": -5,
+  "assembly.banned": 5,
+  "assembly.registered": 3,
+  "media.state_media": 5,
+  "media.limited_censorship": 3,
+  "religion.secularization": 5,
+  "religion.state_church": 10,
+  "religion.state_valler": 10,
+  "welfare.basic": 5,
+  "welfare.strong": 10,
+  "nationality.karank_first": 5,
+  "nationality.yor_first": 5,
+};
+
 const SCANDALS = [
   ["罪大恶极", "你和亲妈有奸情。"],
   ["罪大恶极", "你和女儿有奸情。"],
@@ -397,19 +416,27 @@ function renderTab() {
 }
 
 function overview() {
-  const legitimacy = calculateLegitimacy();
+  const legitimacy = calculateLegitimacyBreakdown();
   return `
     <div class="grid two">
       <section class="panel">
         <div class="panelHeader">
           <h2>国家状态</h2>
-          <span class="scorePill ${legitimacy < 25 ? "danger" : legitimacy >= 75 ? "good" : ""}">合法性 ${legitimacy}%</span>
+          <span class="scorePill ${legitimacy.total < 25 ? "danger" : legitimacy.total >= 75 ? "good" : ""}">合法性 ${legitimacy.total}%</span>
         </div>
         <div class="statGrid">
           ${metric("经济形势", state.data.state?.economy_status ?? "一切如常")}
           ${metric("国家预算", state.data.state?.budget_status ?? "平衡")}
           ${metric("DM修正", `${state.data.state?.legitimacy_modifier ?? 0}%`)}
           ${metric("最大回合", state.data.state?.max_turns ?? 5)}
+        </div>
+        <div class="legitimacyLedger">
+          ${legitimacy.entries.map((entry) => `
+            <div class="ledgerRow ${entry.value < 0 ? "negative" : entry.value > 0 ? "positive" : ""}">
+              <span>${escapeHtml(entry.label)}</span>
+              <strong>${formatSigned(entry.value)}%</strong>
+            </div>
+          `).join("")}
         </div>
         <div class="policyList">
           ${state.data.policies.map(policyRow).join("")}
@@ -1176,6 +1203,7 @@ async function createCharacter() {
   }
   const inserted = await supabase.from("characters_public").insert({
     owner_id: ownerId,
+    prestige: attributes.prestige,
     ...characterDraft,
   }).select("id").single();
   if (inserted.error) {
@@ -1453,16 +1481,132 @@ function entityOptions() {
   ].map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join("");
 }
 
-function calculateLegitimacy() {
-  let total = Number(state.data.state?.legitimacy_base ?? 33) + Number(state.data.state?.legitimacy_modifier ?? 0);
+function calculateLegitimacyBreakdown() {
+  const entries = [];
+  const add = (label, value) => entries.push({ label, value: roundTenth(value) });
+  const base = Number(state.data.state?.legitimacy_base ?? 40);
+  add("基础合法性", base);
+
+  const budgetValues = { "耗尽": -10, "缺乏": -5, "平衡": 0, "盈余": 5, "充沛": 10 };
+  const budgetStatus = state.data.state?.budget_status ?? "平衡";
+  add(`国家预算：${budgetStatus}`, budgetValues[budgetStatus] ?? 0);
+
+  for (const policy of state.data.policies) {
+    const key = `${policy.policy_key}.${policy.option_key}`;
+    const value = POLICY_LEGITIMACY[key] ?? 0;
+    if (value) add(`政策：${policyOptionName(policy)}`, value);
+  }
+
+  addRegimeLegitimacy(entries);
+  addFactionLegitimacy(entries);
+
   for (const group of state.data.groups) {
-    if (Number(group.mood) === 2) total += 5;
-    if (Number(group.mood) === -2) total -= 5;
+    const mood = Number(group.mood);
+    if (mood === 2) add(`满意群体：${group.name}`, 5);
+    if (mood === -2) add(`愤怒群体：${group.name}`, -5);
   }
+
+  const dmModifier = Number(state.data.state?.legitimacy_modifier ?? 0);
+  if (dmModifier) add("DM修正", dmModifier);
+
+  const total = roundTenth(entries.reduce((sum, entry) => sum + entry.value, 0));
+  return { total, entries };
+}
+
+function addRegimeLegitimacy(entries) {
+  const regime = currentPolicyOption("regime");
+  const addPrestige = (positionKey, label, perPoint = false) => {
+    const holder = positionHolder(positionKey);
+    if (!holder) {
+      entries.push({ label: `${label}空缺`, value: 0 });
+      return;
+    }
+    const prestige = entityPrestige(holder);
+    const value = perPoint ? prestige - 50 : Math.trunc((prestige - 50) / 5);
+    entries.push({ label: `${label}威望 ${prestige}`, value: roundTenth(value) });
+  };
+
+  if (regime === "dual_monarchy") {
+    addPrestige("duke", "公爵");
+    addPrestige("prime_minister", "首相");
+  }
+  if (regime === "ceremonial_monarchy") addPrestige("prime_minister", "首相");
+  if (regime === "presidential_republic") addPrestige("prime_minister", "首相", true);
+  if (regime === "military_government") addPrestige("war_minister", "战争部长", true);
+}
+
+function addFactionLegitimacy(entries) {
+  const civilService = currentPolicyOption("civil_service");
+  const positiveMultiplier = civilService === "bureaucrats_in_politics" || civilService === "free_participation" ? 2 : 1;
+  const absentMultiplier = civilService === "free_participation" ? 2 : 1;
+  const counts = governmentFactionCounts();
+
   for (const faction of state.data.factions.filter((f) => f.faction_type === "political" && f.key !== "unaligned")) {
-    if (faction.key === "social_democrats" && Number(faction.government_positions) === 0) total -= Number(faction.influence) / 2;
+    const count = counts.get(faction.id) ?? 0;
+    const influence = Number(faction.influence ?? 0);
+    if (count > 0) {
+      entries.push({
+        label: `${faction.short_name}入阁 ${count} 人`,
+        value: roundTenth((influence / 8) * count * positiveMultiplier),
+      });
+    } else {
+      entries.push({
+        label: `${faction.short_name}未入阁`,
+        value: roundTenth(-(influence / 2) * absentMultiplier),
+      });
+    }
   }
-  return Math.round(total * 10) / 10;
+}
+
+function governmentFactionCounts() {
+  const counts = new Map();
+  for (const assignment of state.data.assignments) {
+    const position = assignment.positions;
+    if (!position?.is_government || position.key === "duke") continue;
+    const factionId = entityFactionId(assignment);
+    if (!factionId) continue;
+    counts.set(factionId, (counts.get(factionId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function positionHolder(positionKey) {
+  return state.data.assignments.find((assignment) => assignment.positions?.key === positionKey) ?? null;
+}
+
+function entityFactionId(entity) {
+  if (entity.entity_type === "character") {
+    return state.data.characters.find((character) => character.id === entity.entity_id)?.faction_id ?? null;
+  }
+  const retainer = state.data.retainers.find((item) => item.id === entity.entity_id);
+  if (!retainer) return null;
+  return state.data.characters.find((character) => character.id === retainer.character_id)?.faction_id ?? null;
+}
+
+function entityPrestige(entity) {
+  if (entity.entity_type === "character") {
+    const character = state.data.characters.find((item) => item.id === entity.entity_id);
+    return Number(character?.prestige ?? 20);
+  }
+  return 50;
+}
+
+function currentPolicyOption(policyKey) {
+  return state.data.policies.find((policy) => policy.policy_key === policyKey)?.option_key ?? "";
+}
+
+function policyOptionName(policy) {
+  const [label, options] = POLICY_CATALOG[policy.policy_key] ?? [policy.policy_key, {}];
+  return `${label}：${options[policy.option_key] ?? policy.option_key}`;
+}
+
+function roundTenth(value) {
+  return Math.round(Number(value) * 10) / 10;
+}
+
+function formatSigned(value) {
+  const rounded = roundTenth(value);
+  return rounded > 0 ? `+${rounded}` : String(rounded);
 }
 
 function isGovernmentHead() {
