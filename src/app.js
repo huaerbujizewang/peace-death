@@ -654,6 +654,8 @@ function characterPanel() {
   const characters = isDm ? state.data.characters : state.data.characters.filter((c) => c.owner_id === state.profile.id);
   const statsByCharacter = new Map(state.data.privateStats.map((s) => [s.character_id, s]));
   const assignmentNames = assignmentMap();
+  const ownCharacterCount = state.data.characters.filter((c) => c.owner_id === state.profile.id && c.active !== false).length;
+  const canCreate = isDm || ownCharacterCount === 0;
   return `
     <section class="panel wide">
       <div class="panelHeader">
@@ -663,7 +665,7 @@ function characterPanel() {
         </div>
         <span class="scorePill">亲信数 = (魅力 + 威望) / 50 向下取整</span>
       </div>
-      ${characterCreateForm()}
+      ${canCreate ? characterCreateForm() : `<div class="notice">每个玩家账号只能创建一张角色卡；需要重车请先删除旧卡，或找 DM 处理。</div>`}
     </section>
     <div class="grid two characterList">
       ${characters.map((character) => {
@@ -683,7 +685,7 @@ function characterPanel() {
             </div>
             <p class="story">${escapeHtml(character.public_background || "暂无公开背景。")}</p>
             ${tagBlock("公开特质", character.public_traits)}
-            ${stats ? statGrid(stats) + tagBlock("秘密特质", stats.secret_traits) + tagBlock("人生追求", [stats.pursuit].filter(Boolean)) : ""}
+            ${stats ? statGrid(stats) + tagBlock("秘密特质", stats.secret_traits) + tagBlock("人生追求", [stats.pursuit].filter(Boolean)) + tagBlock("黑料", scandalLabels(stats.scandals)) : ""}
             <h3>亲信</h3>
             <div class="retainerGrid">
               ${retainers.map((retainer) => `
@@ -704,7 +706,10 @@ function characterPanel() {
 
 function characterCreateForm() {
   const playerOptions = state.profile.role === "dm"
-    ? state.data.profiles?.map((p) => `<option value="${p.id}" ${p.id === state.profile.id ? "selected" : ""}>${escapeHtml(p.display_name)}</option>`).join("") ?? ""
+    ? state.data.profiles?.map((p) => {
+        const blocked = !canOwnerCreateCharacter(p.id);
+        return `<option value="${p.id}" ${p.id === state.profile.id ? "selected" : ""} ${blocked ? "disabled" : ""}>${escapeHtml(p.display_name)}${blocked ? "（已有角色）" : ""}</option>`;
+      }).join("") ?? ""
     : "";
   return `
     <form id="character-form" class="characterForm">
@@ -882,17 +887,30 @@ function parliamentVoteCard(group) {
         ${state.data.factions.filter((f) => f.faction_type === "political").map((f) => `<span><i style="background:${escapeAttr(f.color)}"></i>${escapeHtml(f.short_name)}</span>`).join("")}
       </div>
       <div class="voteTable">
-        ${group.rows.map((v) => `
+        ${group.rows.map((rawVote) => {
+          const v = normalizedVoteRow(rawVote);
+          return `
           <div class="voteRow">
             <strong>${escapeHtml(v.factions?.short_name ?? factionName(v.faction_id))}</strong>
             <span>${v.seats}席</span>
-            <button ${isDm ? "" : "disabled"} data-vote="${v.id}" data-field="yes_votes" data-current="${v.yes_votes}">赞成 ${v.yes_votes}</button>
-            <button ${isDm ? "" : "disabled"} data-vote="${v.id}" data-field="no_votes" data-current="${v.no_votes}">反对 ${v.no_votes}</button>
-            <button ${isDm ? "" : "disabled"} data-vote="${v.id}" data-field="abstain_votes" data-current="${v.abstain_votes}">弃权 ${v.abstain_votes}</button>
+            ${voteControl(v, "yes_votes", "赞成", isDm)}
+            ${voteControl(v, "no_votes", "反对", isDm)}
+            ${voteControl(v, "abstain_votes", "弃权", isDm)}
           </div>
-        `).join("")}
+        `}).join("")}
       </div>
     </article>
+  `;
+}
+
+function voteControl(v, field, label, enabled) {
+  const value = Number(v[field] ?? 0);
+  return `
+    <label class="voteControl">
+      <span>${label} ${value}</span>
+      <input type="range" min="0" max="${v.seats}" step="1" value="${value}" ${enabled ? "" : "disabled"} data-vote="${v.id}" data-field="${field}">
+      <input type="number" min="0" max="${v.seats}" step="1" value="${value}" ${enabled ? "" : "disabled"} data-vote="${v.id}" data-field="${field}">
+    </label>
   `;
 }
 
@@ -907,7 +925,7 @@ function groupedVotes() {
 }
 
 function voteTotals(rows) {
-  return rows.reduce((sum, row) => ({
+  return rows.map(normalizedVoteRow).reduce((sum, row) => ({
     yes: sum.yes + Number(row.yes_votes ?? 0),
     no: sum.no + Number(row.no_votes ?? 0),
     abstain: sum.abstain + Number(row.abstain_votes ?? 0),
@@ -916,7 +934,7 @@ function voteTotals(rows) {
 
 function parliamentDots(rows) {
   const seats = [];
-  const rowByFaction = new Map(rows.map((row) => [row.faction_id, row]));
+  const rowByFaction = new Map(rows.map((row) => [row.faction_id, normalizedVoteRow(row)]));
   for (const faction of state.data.factions.filter((f) => f.faction_type === "political")) {
     const row = rowByFaction.get(faction.id);
     const seatCount = row ? Number(row.seats) : Math.round(Number(faction.influence));
@@ -957,6 +975,16 @@ function parliamentDots(rows) {
   }).join("");
 }
 
+function normalizedVoteRow(row) {
+  const seats = Math.max(0, Number(row.seats ?? 0));
+  const values = normalizeVoteValues({
+    yes_votes: Number(row.yes_votes ?? 0),
+    no_votes: Number(row.no_votes ?? 0),
+    abstain_votes: Number(row.abstain_votes ?? seats),
+  }, seats, "yes_votes");
+  return { ...row, seats, ...values };
+}
+
 function voteClassLabel(value) {
   return { yes: "赞成", no: "反对", abstain: "弃权", neutral: "未表决" }[value] ?? value;
 }
@@ -966,10 +994,32 @@ function dmPanel() {
     <div class="grid two">
       <section class="panel">
         <h2>阶段与国家修正</h2>
-        <button class="primaryButton" data-action="advance-phase">推进到下一阶段</button>
+        <div class="buttonRow">
+          <button class="ghostButton" data-action="previous-phase">回退阶段</button>
+          <button class="primaryButton" data-action="advance-phase">推进到下一阶段</button>
+          <button class="dangerButton" data-action="reset-turn">重置到第1回合开始</button>
+        </div>
+        <div class="formRow">
+          <label>当前回合<input id="dm-turn" type="number" min="1" value="${state.data.state?.current_turn ?? 1}"></label>
+          <label>当前阶段<select id="dm-phase">${PHASES.map(([key, label]) => `<option value="${key}" ${key === state.data.state?.current_phase ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>
+        </div>
+        <button class="ghostButton" data-action="save-phase">保存回合/阶段</button>
         <label>合法性DM修正<input id="legitimacy-modifier" type="number" value="${state.data.state?.legitimacy_modifier ?? 0}"></label>
         <button class="ghostButton" data-action="save-state">保存修正</button>
-        <button class="ghostButton" data-action="draw-scandal">随机抽取黑料</button>
+      </section>
+      <section class="panel">
+        <h2>黑料</h2>
+        <label>目标角色<select id="scandal-character">${characterOptions()}</select></label>
+        <label>预设黑料<select id="scandal-preset">${SCANDALS.map((item, index) => `<option value="${index}">${escapeHtml(item[0])}：${escapeHtml(item[1])}</option>`).join("")}</select></label>
+        <div class="buttonRow">
+          <button class="ghostButton" data-action="draw-scandal">随机加入</button>
+          <button class="primaryButton" data-action="add-scandal">加入所选</button>
+        </div>
+        <div class="formRow">
+          <label>严重度<input id="custom-scandal-severity" value="可大可小"></label>
+          <label>内容<input id="custom-scandal-text" placeholder="手写黑料"></label>
+        </div>
+        <button class="ghostButton" data-action="add-custom-scandal">加入自定义黑料</button>
       </section>
       <section class="panel">
         <h2>职位任命</h2>
@@ -1040,13 +1090,18 @@ function bindTab() {
   });
 
   root.querySelector('[data-action="create-vote"]')?.addEventListener("click", createVote);
-  root.querySelectorAll("[data-vote]").forEach((button) => {
-    button.addEventListener("click", () => updateVote(button.dataset.vote, button.dataset.field, button.dataset.current ?? "0"));
+  root.querySelectorAll("[data-vote]").forEach((input) => {
+    input.addEventListener("change", () => updateVote(input.dataset.vote, input.dataset.field, input.value));
   });
   root.querySelector('[data-action="advance-phase"]')?.addEventListener("click", advancePhase);
+  root.querySelector('[data-action="previous-phase"]')?.addEventListener("click", previousPhase);
+  root.querySelector('[data-action="save-phase"]')?.addEventListener("click", savePhase);
+  root.querySelector('[data-action="reset-turn"]')?.addEventListener("click", resetTurn);
   root.querySelector('[data-action="save-state"]')?.addEventListener("click", saveState);
   root.querySelector('[data-action="assign-position"]')?.addEventListener("click", assignPosition);
-  root.querySelector('[data-action="draw-scandal"]')?.addEventListener("click", drawScandal);
+  root.querySelector('[data-action="draw-scandal"]')?.addEventListener("click", addRandomScandal);
+  root.querySelector('[data-action="add-scandal"]')?.addEventListener("click", addSelectedScandal);
+  root.querySelector('[data-action="add-custom-scandal"]')?.addEventListener("click", addCustomScandal);
   root.querySelectorAll("[data-process]").forEach((button) => {
     button.addEventListener("click", () => processAction(button.dataset.process));
   });
@@ -1159,6 +1214,10 @@ async function createCharacter() {
   if (!form) return;
   const data = new FormData(form);
   const ownerId = state.profile.role === "dm" ? String(data.get("owner_id")) : state.profile.id;
+  if (!canOwnerCreateCharacter(ownerId)) {
+    alert("每个玩家账号只能创建一张角色卡；DM账号不受此限制。");
+    return;
+  }
   const publicTraits = selectedValues(form, "public_traits");
   const secretTraits = selectedValues(form, "secret_traits");
   const pursuit = String(data.get("pursuit") ?? "");
@@ -1360,13 +1419,39 @@ function parseRetainers(text) {
 }
 
 async function advancePhase() {
+  return shiftPhase(1);
+}
+
+async function previousPhase() {
+  return shiftPhase(-1);
+}
+
+async function shiftPhase(direction) {
   const current = state.data.state?.current_phase ?? "turn_start";
   const index = PHASES.findIndex(([key]) => key === current);
-  const next = PHASES[(index + 1) % PHASES.length][0];
-  const patch = next === "turn_start"
-    ? { current_phase: next, current_turn: Number(state.data.state?.current_turn ?? 1) + 1 }
-    : { current_phase: next };
+  const safeIndex = index >= 0 ? index : 0;
+  const currentTurn = Number(state.data.state?.current_turn ?? 1);
+  const nextIndex = (safeIndex + direction + PHASES.length) % PHASES.length;
+  const next = PHASES[nextIndex][0];
+  const patch = { current_phase: next };
+  if (direction > 0 && next === "turn_start") patch.current_turn = currentTurn + 1;
+  if (direction < 0 && safeIndex === 0) patch.current_turn = Math.max(1, currentTurn - 1);
   const { error } = await supabase.from("game_state").update(patch).eq("id", true);
+  if (error) alert(error.message);
+  else loadAll();
+}
+
+async function savePhase() {
+  const turn = Math.max(1, Number(document.getElementById("dm-turn")?.value ?? 1));
+  const phase = document.getElementById("dm-phase")?.value ?? "turn_start";
+  const { error } = await supabase.from("game_state").update({ current_turn: turn, current_phase: phase }).eq("id", true);
+  if (error) alert(error.message);
+  else loadAll();
+}
+
+async function resetTurn() {
+  if (!confirm("确定要把回合重置为第1回合 / 回合开始吗？")) return;
+  const { error } = await supabase.from("game_state").update({ current_turn: 1, current_phase: "turn_start" }).eq("id", true);
   if (error) alert(error.message);
   else loadAll();
 }
@@ -1404,11 +1489,41 @@ async function createVote() {
 }
 
 async function updateVote(id, field, currentValue) {
-  const value = Number(prompt("填写票数", currentValue || "0"));
-  if (Number.isNaN(value)) return;
-  const { error } = await supabase.from("parliament_votes").update({ [field]: value }).eq("id", id);
+  const row = state.data.votes.find((vote) => vote.id === id);
+  if (!row) return;
+  const seats = Math.max(0, Number(row.seats ?? 0));
+  const patch = normalizeVoteValues({
+    yes_votes: Number(row.yes_votes ?? 0),
+    no_votes: Number(row.no_votes ?? 0),
+    abstain_votes: Number(row.abstain_votes ?? seats),
+    [field]: Number(currentValue),
+  }, seats, field);
+  if (Object.values(patch).some((value) => Number.isNaN(value))) return;
+  const { error } = await supabase.from("parliament_votes").update(patch).eq("id", id);
   if (error) alert(error.message);
   else loadAll();
+}
+
+function normalizeVoteValues(values, seats, changedField) {
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, Math.round(Number(value) || 0)));
+  let yes = clamp(values.yes_votes, 0, seats);
+  let no = clamp(values.no_votes, 0, seats);
+  let abstain = clamp(values.abstain_votes, 0, seats);
+
+  if (changedField === "yes_votes") {
+    no = Math.min(no, seats - yes);
+    abstain = seats - yes - no;
+  } else if (changedField === "no_votes") {
+    yes = Math.min(yes, seats - no);
+    abstain = seats - yes - no;
+  } else {
+    const remaining = seats - abstain;
+    yes = Math.min(yes, remaining);
+    no = Math.min(no, remaining - yes);
+    yes += remaining - yes - no;
+  }
+
+  return { yes_votes: yes, no_votes: no, abstain_votes: abstain };
 }
 
 async function processAction(id) {
@@ -1423,9 +1538,45 @@ async function processAction(id) {
   else loadAll();
 }
 
-function drawScandal() {
+async function addRandomScandal() {
   const item = SCANDALS[Math.floor(Math.random() * SCANDALS.length)];
-  alert(`${item[0]}：${item[1]}`);
+  await addScandalToSelected(item);
+}
+
+async function addSelectedScandal() {
+  const index = Number(document.getElementById("scandal-preset")?.value ?? 0);
+  await addScandalToSelected(SCANDALS[index] ?? SCANDALS[0]);
+}
+
+async function addCustomScandal() {
+  const severity = document.getElementById("custom-scandal-severity")?.value.trim() || "可大可小";
+  const text = document.getElementById("custom-scandal-text")?.value.trim();
+  if (!text) {
+    alert("请填写自定义黑料内容。");
+    return;
+  }
+  await addScandalToSelected([severity, text]);
+}
+
+async function addScandalToSelected(item) {
+  const characterId = document.getElementById("scandal-character")?.value;
+  if (!characterId) return;
+  const stats = state.data.privateStats.find((row) => row.character_id === characterId);
+  if (!stats) {
+    alert("找不到该角色的私密卡。");
+    return;
+  }
+  const scandals = Array.isArray(stats.scandals) ? stats.scandals : [];
+  const next = [
+    ...scandals,
+    { severity: item[0], text: item[1], added_at: new Date().toISOString() },
+  ];
+  const { error } = await supabase
+    .from("character_private")
+    .update({ scandals: next, scandal_count: next.length })
+    .eq("character_id", characterId);
+  if (error) alert(error.message);
+  else loadAll();
 }
 
 function metric(label, value) {
@@ -1631,6 +1782,27 @@ function assignmentMap() {
 
 function factionName(id) {
   return state.data.factions.find((f) => f.id === id)?.short_name ?? "未定";
+}
+
+function characterOptions() {
+  return state.data.characters
+    .filter((character) => character.active !== false)
+    .map((character) => `<option value="${character.id}">${escapeHtml(character.name)} / ${escapeHtml(factionName(character.faction_id))}</option>`)
+    .join("");
+}
+
+function canOwnerCreateCharacter(ownerId) {
+  const profile = state.data.profiles.find((item) => item.id === ownerId);
+  if (profile?.role === "dm") return true;
+  return !state.data.characters.some((character) => character.owner_id === ownerId && character.active !== false);
+}
+
+function scandalLabels(scandals) {
+  if (!Array.isArray(scandals)) return [];
+  return scandals.map((item) => {
+    if (Array.isArray(item)) return `${item[0]}：${item[1]}`;
+    return `${item.severity ?? "黑料"}：${item.text ?? ""}`;
+  }).filter((text) => text.trim() !== "：");
 }
 
 function canDeleteCharacter(character) {

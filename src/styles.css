@@ -789,7 +789,30 @@ textarea {
 }
 
 .voteRow {
-  grid-template-columns: minmax(160px, 1fr) 90px repeat(3, 105px);
+  grid-template-columns: minmax(140px, 0.8fr) 70px repeat(3, minmax(150px, 1fr));
+}
+
+.voteControl {
+  display: grid;
+  grid-template-columns: 1fr 64px;
+  gap: 6px 8px;
+  align-items: center;
+  margin: 0;
+}
+
+.voteControl span {
+  grid-column: 1 / -1;
+  color: #48515a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.voteControl input[type="range"] {
+  padding: 0;
+}
+
+.voteControl input[type="number"] {
+  padding: 6px 8px;
 }
 
 .parliamentCard {
@@ -961,6 +984,10 @@ textarea {
 
   .voteRow {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .voteControl {
+    grid-column: 1 / -1;
   }
 }
 
