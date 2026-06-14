@@ -556,6 +556,12 @@ function characterCreateForm() {
         <label>政治派系<select name="faction_id">${state.data.factions.filter((f) => f.faction_type === "political" && f.key !== "unaligned").map((f) => `<option value="${f.id}">${escapeHtml(f.short_name)}</option>`).join("")}</select></label>
       </div>
       <h3>属性</h3>
+      <div class="sheetMeters">
+        <span id="attribute-meter">属性点：0 / 400</span>
+        <span id="wealth-meter">财富范围：40-80</span>
+        <span id="prestige-meter">威望范围：20-年龄</span>
+        <span id="luck-meter">幸运：15-90，5的倍数</span>
+      </div>
       <div class="statInputGrid">
         ${statInput("body", "体质", 40, 40, 80)}
         ${statInput("willpower", "意志", 40, 40, 80)}
@@ -567,12 +573,16 @@ function characterCreateForm() {
         ${statInput("luck", "幸运", 45, 15, 90, 5)}
       </div>
       <h3>技能</h3>
+      <div class="sheetMeters">
+        <span id="skill-meter">技能点：0 / 智力×2</span>
+      </div>
       <div class="statInputGrid">
         ${["谈判", "演讲", "写作", "法律", "会计"].map((skill) => `<label>${skill}<input name="skill_${skill}" type="number" min="10" max="100" value="10"></label>`).join("")}
       </div>
       <div class="traitColumns">
         <div>
           <h3>公开特质</h3>
+          <div class="sheetMeters"><span id="trait-meter">特质点：0 / 4</span></div>
           ${PUBLIC_TRAITS.map(([name, cost, req]) => traitCheckbox("public_traits", name, cost, req)).join("")}
         </div>
         <div>
@@ -583,6 +593,7 @@ function characterCreateForm() {
         </div>
       </div>
       <label>公开背景<textarea name="public_background"></textarea></label>
+      <div class="sheetMeters"><span id="retainer-meter">亲信：0 / 0</span></div>
       <label>亲信（每行一个：姓名，性别，年龄，备注）<textarea name="retainers" placeholder="海因里希，男，55，管家"></textarea></label>
       <div class="toggleRow">
         ${state.profile.role === "dm" ? `<label><input name="override_validation" type="checkbox"> DM忽略特质/亲信校验</label>` : ""}
@@ -851,6 +862,7 @@ function bindTab() {
   });
 
   root.querySelector('[data-action="create-character"]')?.addEventListener("click", createCharacter);
+  setupCharacterSheetAssistant();
   root.querySelectorAll("[data-delete-character]").forEach((button) => {
     button.addEventListener("click", () => deleteCharacter(button.dataset.deleteCharacter, button.dataset.characterName));
   });
@@ -873,6 +885,69 @@ function bindTab() {
   root.querySelectorAll("[data-process]").forEach((button) => {
     button.addEventListener("click", () => processAction(button.dataset.process));
   });
+}
+
+function setupCharacterSheetAssistant() {
+  const form = document.getElementById("character-form");
+  if (!form) return;
+  const update = () => updateCharacterSheetAssistant(form);
+  form.addEventListener("input", update);
+  form.addEventListener("change", update);
+  update();
+}
+
+function updateCharacterSheetAssistant(form) {
+  const data = new FormData(form);
+  const publicTraits = selectedValues(form, "public_traits");
+  const secretTraits = selectedValues(form, "secret_traits");
+  const attributes = {
+    body: numberField(data, "body"),
+    willpower: numberField(data, "willpower"),
+    wealth: numberField(data, "wealth"),
+    charm: numberField(data, "charm"),
+    intellect: numberField(data, "intellect"),
+    prestige: numberField(data, "prestige"),
+    perception: numberField(data, "perception"),
+    luck: numberField(data, "luck"),
+  };
+  const skills = {
+    谈判: numberField(data, "skill_谈判"),
+    演讲: numberField(data, "skill_演讲"),
+    写作: numberField(data, "skill_写作"),
+    法律: numberField(data, "skill_法律"),
+    会计: numberField(data, "skill_会计"),
+  };
+  const factionId = String(data.get("faction_id") ?? "");
+  const coreSum = ["body", "willpower", "wealth", "charm", "intellect", "perception"].reduce((total, key) => total + Number(attributes[key] ?? 0), 0);
+  setMeter("attribute-meter", `属性点：${coreSum} / 400，剩余 ${400 - coreSum}`, coreSum === 400);
+
+  const [wealthMin, wealthMax] = wealthRange(publicTraits);
+  setMeter("wealth-meter", `财富范围：${wealthMin}-${wealthMax}，当前 ${attributes.wealth}`, inRange(attributes.wealth, wealthMin, wealthMax));
+
+  const age = numberField(data, "age");
+  setMeter("prestige-meter", `威望范围：20-${Math.max(20, age)}，当前 ${attributes.prestige}`, inRange(attributes.prestige, 20, Math.max(20, age)));
+  setMeter("luck-meter", `幸运：${attributes.luck}，需为15-90且为5的倍数`, inRange(attributes.luck, 15, 90) && Number(attributes.luck) % 5 === 0);
+
+  const skillSpent = Object.values(skills).reduce((total, value) => total + Math.max(0, Number(value) - 10), 0);
+  const skillBudget = Number(attributes.intellect) * 2;
+  setMeter("skill-meter", `技能点：已用 ${skillSpent} / ${skillBudget}，剩余 ${skillBudget - skillSpent}`, skillSpent === skillBudget);
+
+  const traitSpent = traitCost(publicTraits, secretTraits, factionId);
+  const traitOk = traitSpent <= 4 && !(publicTraits.includes("资本家") && publicTraits.includes("苦行僧"));
+  setMeter("trait-meter", `特质点：已用 ${traitSpent} / 4，剩余 ${4 - traitSpent}`, traitOk);
+
+  const retainers = parseRetainers(String(data.get("retainers") ?? ""));
+  const retainerLimit = Math.floor((Number(attributes.charm) + Number(attributes.prestige)) / 50);
+  const retainerFormatOk = retainers.every((retainer) => retainer.name && retainer.gender && retainer.age);
+  setMeter("retainer-meter", `亲信：${retainers.length} / ${retainerLimit}`, retainers.length <= retainerLimit && retainerFormatOk);
+}
+
+function setMeter(id, text, ok) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.textContent = text;
+  element.classList.toggle("bad", !ok);
+  element.classList.toggle("good", ok);
 }
 
 async function saveAction(mode) {

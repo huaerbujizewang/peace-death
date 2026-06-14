@@ -543,6 +543,35 @@ textarea {
   gap: 4px;
 }
 
+.sheetMeters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -2px 0 12px;
+}
+
+.sheetMeters span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  color: #46505a;
+  background: #ece8df;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sheetMeters span.good {
+  color: #1f6b45;
+  background: #ddf0e4;
+}
+
+.sheetMeters span.bad {
+  color: #9b2332;
+  background: #f3dfe2;
+}
+
 .checkLine {
   display: flex;
   align-items: center;
