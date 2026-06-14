@@ -11,6 +11,33 @@ const PHASES = [
   ["settlement", "回合结算"],
 ];
 
+const PUBLIC_TRAITS = [
+  ["约尔贵族", 1, "ethnicity:约尔裔"],
+  ["卡兰克贵族", 1, "ethnicity:卡兰克裔"],
+  ["精通双语", 1, "intellect:60"],
+  ["资本家", 2, ""],
+  ["神职人员", 2, ""],
+  ["退役军官", 1, "age_min:50"],
+  ["博士学位", 1, "intellect:80"],
+  ["苦行僧", 2, ""],
+  ["蹲监狱", -1, ""],
+  ["年轻气盛", 1, "age_max:40"],
+  ["老逼登", 1, "age_min:60"],
+];
+
+const SECRET_TRAITS = [
+  ["文官联系", 1],
+  ["军官联系", 1],
+  ["媒体联系", 1],
+  ["黑手党联系", 1],
+  ["工会联系", 1],
+  ["卡兰克联系", 1],
+  ["罗伊尔联系", 1],
+  ["海外情报局联系", 1],
+];
+
+const PURSUITS = ["利益至上", "权力至上", "国家至上", "理想至上"];
+
 const POLICY_CATALOG = {
   regime: ["政体", { dual_monarchy: "二元君主立宪制", ceremonial_monarchy: "虚位君主立宪制", parliamentary_republic: "议会共和制", presidential_republic: "总统共和制", military_government: "军政府" }],
   civil_service: ["公务员制度", { independent: "公务员系统独立", bureaucrats_in_politics: "允许文官参政", free_participation: "允许自由参政" }],
@@ -151,6 +178,7 @@ function emptyData() {
     foreignPowers: [],
     votes: [],
     positions: [],
+    profiles: [],
   };
 }
 
@@ -178,6 +206,7 @@ async function loadAll() {
     supabase.from("foreign_powers").select("*").order("name"),
     supabase.from("parliament_votes").select("*, factions(short_name, color)").order("created_at", { ascending: false }),
     supabase.from("positions").select("*").order("sort_order"),
+    supabase.from("profiles").select("*").order("created_at"),
   ]);
   const error = queries.find((item) => item.error)?.error;
   if (error) {
@@ -185,7 +214,7 @@ async function loadAll() {
     render();
     return;
   }
-  const [gameState, characters, privateStats, retainers, retainerPrivate, assignments, actions, factions, groups, policies, foreignPowers, votes, positions] = queries;
+  const [gameState, characters, privateStats, retainers, retainerPrivate, assignments, actions, factions, groups, policies, foreignPowers, votes, positions, profiles] = queries;
   state.data = {
     state: gameState.data,
     characters: characters.data ?? [],
@@ -200,6 +229,7 @@ async function loadAll() {
     foreignPowers: foreignPowers.data ?? [],
     votes: votes.data ?? [],
     positions: positions.data ?? [],
+    profiles: profiles.data ?? [],
   };
   render();
 }
@@ -376,7 +406,17 @@ function characterPanel() {
   const statsByCharacter = new Map(state.data.privateStats.map((s) => [s.character_id, s]));
   const assignmentNames = assignmentMap();
   return `
-    <div class="grid two">
+    <section class="panel wide">
+      <div class="panelHeader">
+        <div>
+          <h2>车卡</h2>
+          <p>固定四点特质点；可以少花，少花作废。属性和骰点按场外结果手动填写。</p>
+        </div>
+        <span class="scorePill">亲信数 = (魅力 + 威望) / 50 向下取整</span>
+      </div>
+      ${characterCreateForm()}
+    </section>
+    <div class="grid two characterList">
       ${characters.map((character) => {
         const stats = statsByCharacter.get(character.id);
         const retainers = state.data.retainers.filter((r) => r.character_id === character.id);
@@ -408,6 +448,71 @@ function characterPanel() {
       }).join("")}
     </div>
   `;
+}
+
+function characterCreateForm() {
+  const playerOptions = state.profile.role === "dm"
+    ? state.data.profiles?.map((p) => `<option value="${p.id}" ${p.id === state.profile.id ? "selected" : ""}>${escapeHtml(p.display_name)}</option>`).join("") ?? ""
+    : "";
+  return `
+    <form id="character-form" class="characterForm">
+      ${state.profile.role === "dm" ? `<label>归属账号<select name="owner_id">${playerOptions}</select></label>` : ""}
+      <div class="formRow">
+        <label>姓名<input name="name" required></label>
+        <label>性别<input name="gender"></label>
+        <label>年龄<input name="age" type="number" min="1" value="40"></label>
+      </div>
+      <div class="formRow">
+        <label>民族<select name="ethnicity"><option>约尔裔</option><option>卡兰克裔</option><option>其他少数民族</option></select></label>
+        <label>信仰<select name="faith"><option>圣会派</option><option>瓦勒派</option><option>无神论</option></select></label>
+        <label>政治派系<select name="faction_id">${state.data.factions.filter((f) => f.faction_type === "political" && f.key !== "unaligned").map((f) => `<option value="${f.id}">${escapeHtml(f.short_name)}</option>`).join("")}</select></label>
+      </div>
+      <h3>属性</h3>
+      <div class="statInputGrid">
+        ${statInput("body", "体质", 40)}
+        ${statInput("willpower", "意志", 40)}
+        ${statInput("wealth", "财富", 40)}
+        ${statInput("charm", "魅力", 40)}
+        ${statInput("intellect", "智力", 40)}
+        ${statInput("prestige", "威望", 20)}
+        ${statInput("perception", "感知", 40)}
+        ${statInput("luck", "幸运", 45)}
+      </div>
+      <h3>技能</h3>
+      <div class="statInputGrid">
+        ${["谈判", "演讲", "写作", "法律", "会计"].map((skill) => `<label>${skill}<input name="skill_${skill}" type="number" min="0" max="100" value="10"></label>`).join("")}
+      </div>
+      <div class="traitColumns">
+        <div>
+          <h3>公开特质</h3>
+          ${PUBLIC_TRAITS.map(([name, cost, req]) => traitCheckbox("public_traits", name, cost, req)).join("")}
+        </div>
+        <div>
+          <h3>秘密特质</h3>
+          ${SECRET_TRAITS.map(([name, cost]) => traitCheckbox("secret_traits", name, cost, "")).join("")}
+          <h3>人生追求</h3>
+          <label>选择一项<select name="pursuit" required>${PURSUITS.map((p) => `<option>${p}</option>`).join("")}</select></label>
+        </div>
+      </div>
+      <label>公开背景<textarea name="public_background"></textarea></label>
+      <label>亲信（每行一个：姓名，性别，年龄，备注）<textarea name="retainers" placeholder="海因里希，男，55，管家"></textarea></label>
+      <div class="toggleRow">
+        ${state.profile.role === "dm" ? `<label><input name="override_validation" type="checkbox"> DM忽略特质/亲信校验</label>` : ""}
+      </div>
+      <div class="buttonRow">
+        <button class="primaryButton" type="button" data-action="create-character">保存角色卡</button>
+      </div>
+    </form>
+  `;
+}
+
+function statInput(name, label, value) {
+  return `<label>${label}<input name="${name}" type="number" min="0" max="100" value="${value}"></label>`;
+}
+
+function traitCheckbox(group, name, cost, req) {
+  const reqText = req ? ` · ${traitRequirementLabel(req)}` : "";
+  return `<label class="checkLine"><input type="checkbox" name="${group}" value="${escapeAttr(name)}" data-cost="${cost}" data-req="${escapeAttr(req)}"> ${escapeHtml(name)}（${cost >= 0 ? cost : "+" + Math.abs(cost)}点${reqText}）</label>`;
 }
 
 function actionPanel() {
@@ -480,23 +585,117 @@ function governmentPanel() {
 
 function parliamentPanel() {
   const isDm = state.profile.role === "dm";
+  const voteGroups = groupedVotes();
   return `
     <section class="panel">
-      <div class="panelHeader"><h2>议会投票</h2><span class="scorePill">100席，DM分配票向</span></div>
+      <div class="panelHeader"><h2>议会投票</h2><span class="scorePill">100席</span></div>
       ${isDm ? `<div class="inlineForm"><input id="vote-issue" placeholder="议题"><button class="primaryButton" data-action="create-vote">创建投票</button></div>` : ""}
-      <div class="voteTable">
-        ${state.data.votes.map((v) => `
-          <div class="voteRow">
-            <strong>${escapeHtml(v.issue)}</strong>
-            <span>${escapeHtml(v.factions?.short_name ?? "")}</span>
-            <button ${isDm ? "" : "disabled"} data-vote="${v.id}" data-field="yes_votes">赞成 ${v.yes_votes}</button>
-            <button ${isDm ? "" : "disabled"} data-vote="${v.id}" data-field="no_votes">反对 ${v.no_votes}</button>
-            <button ${isDm ? "" : "disabled"} data-vote="${v.id}" data-field="abstain_votes">弃权 ${v.abstain_votes}</button>
-          </div>
-        `).join("")}
+      <div class="parliamentStack">
+        ${voteGroups.length ? voteGroups.map(parliamentVoteCard).join("") : parliamentVoteCard({ issue: "当前席位", turn: state.data.state?.current_turn ?? 1, rows: [] })}
       </div>
     </section>
   `;
+}
+
+function parliamentVoteCard(group) {
+  const isDm = state.profile.role === "dm";
+  const totals = voteTotals(group.rows);
+  return `
+    <article class="parliamentCard">
+      <div class="parliamentHeader">
+        <div>
+          <h3>${escapeHtml(group.issue)}</h3>
+          <span>第 ${group.turn} 回合</span>
+        </div>
+        <div class="voteTotals">
+          <b class="yes">赞成 ${totals.yes}</b>
+          <b class="no">反对 ${totals.no}</b>
+          <b class="abstain">弃权 ${totals.abstain}</b>
+        </div>
+      </div>
+      <div class="chamber" aria-label="${escapeAttr(group.issue)} 席位图">
+        ${parliamentDots(group.rows)}
+      </div>
+      <div class="voteLegend">
+        ${state.data.factions.filter((f) => f.faction_type === "political").map((f) => `<span><i style="background:${escapeAttr(f.color)}"></i>${escapeHtml(f.short_name)}</span>`).join("")}
+      </div>
+      <div class="voteTable">
+        ${group.rows.map((v) => `
+          <div class="voteRow">
+            <strong>${escapeHtml(v.factions?.short_name ?? factionName(v.faction_id))}</strong>
+            <span>${v.seats}席</span>
+            <button ${isDm ? "" : "disabled"} data-vote="${v.id}" data-field="yes_votes" data-current="${v.yes_votes}">赞成 ${v.yes_votes}</button>
+            <button ${isDm ? "" : "disabled"} data-vote="${v.id}" data-field="no_votes" data-current="${v.no_votes}">反对 ${v.no_votes}</button>
+            <button ${isDm ? "" : "disabled"} data-vote="${v.id}" data-field="abstain_votes" data-current="${v.abstain_votes}">弃权 ${v.abstain_votes}</button>
+          </div>
+        `).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function groupedVotes() {
+  const groups = new Map();
+  for (const vote of state.data.votes) {
+    const key = `${vote.turn_number}:${vote.issue}`;
+    if (!groups.has(key)) groups.set(key, { issue: vote.issue, turn: vote.turn_number, rows: [] });
+    groups.get(key).rows.push(vote);
+  }
+  return Array.from(groups.values()).sort((a, b) => b.turn - a.turn);
+}
+
+function voteTotals(rows) {
+  return rows.reduce((sum, row) => ({
+    yes: sum.yes + Number(row.yes_votes ?? 0),
+    no: sum.no + Number(row.no_votes ?? 0),
+    abstain: sum.abstain + Number(row.abstain_votes ?? 0),
+  }), { yes: 0, no: 0, abstain: 0 });
+}
+
+function parliamentDots(rows) {
+  const seats = [];
+  const rowByFaction = new Map(rows.map((row) => [row.faction_id, row]));
+  for (const faction of state.data.factions.filter((f) => f.faction_type === "political")) {
+    const row = rowByFaction.get(faction.id);
+    const seatCount = row ? Number(row.seats) : Math.round(Number(faction.influence));
+    const votes = row
+      ? [
+          ["yes", Number(row.yes_votes ?? 0)],
+          ["no", Number(row.no_votes ?? 0)],
+          ["abstain", Math.max(0, seatCount - Number(row.yes_votes ?? 0) - Number(row.no_votes ?? 0))],
+        ]
+      : [["neutral", seatCount]];
+    for (const [voteClass, count] of votes) {
+      for (let i = 0; i < count; i += 1) seats.push({ color: faction.color, faction: faction.short_name, voteClass });
+    }
+  }
+  const normalized = seats.slice(0, 100);
+  while (normalized.length < 100) normalized.push({ color: "#b9b3aa", faction: "空席", voteClass: "neutral" });
+  const centerX = 50;
+  const centerY = 50;
+  const rings = [
+    { radius: 44, count: 36 },
+    { radius: 34, count: 30 },
+    { radius: 24, count: 22 },
+    { radius: 14, count: 12 },
+  ];
+  let index = 0;
+  return rings.map((ring) => {
+    const dots = [];
+    for (let i = 0; i < ring.count; i += 1) {
+      const seat = normalized[index] ?? normalized[normalized.length - 1];
+      const angle = Math.PI - (Math.PI * (i + 0.5)) / ring.count;
+      const x = centerX + Math.cos(angle) * ring.radius;
+      const y = centerY - Math.sin(angle) * ring.radius;
+      dots.push(`<span class="seatDot ${seat.voteClass}" style="left:${x}%; top:${y}%; background:${escapeAttr(seat.color)}" title="${escapeAttr(`${seat.faction} · ${voteClassLabel(seat.voteClass)}`)}"></span>`);
+      index += 1;
+    }
+    return dots.join("");
+  }).join("");
+}
+
+function voteClassLabel(value) {
+  return { yes: "赞成", no: "反对", abstain: "弃权", neutral: "未表决" }[value] ?? value;
 }
 
 function dmPanel() {
@@ -558,6 +757,8 @@ function bindTab() {
     button.addEventListener("click", () => saveAction(button.dataset.actionSave));
   });
 
+  root.querySelector('[data-action="create-character"]')?.addEventListener("click", createCharacter);
+
   root.querySelectorAll("[data-approve]").forEach((button) => {
     button.addEventListener("click", async () => {
       await supabase.from("actions").update({ status: button.dataset.status, approved_by: state.profile.id }).eq("id", button.dataset.approve);
@@ -567,7 +768,7 @@ function bindTab() {
 
   root.querySelector('[data-action="create-vote"]')?.addEventListener("click", createVote);
   root.querySelectorAll("[data-vote]").forEach((button) => {
-    button.addEventListener("click", () => updateVote(button.dataset.vote, button.dataset.field, button.textContent.replace(/\D+/g, "")));
+    button.addEventListener("click", () => updateVote(button.dataset.vote, button.dataset.field, button.dataset.current ?? "0"));
   });
   root.querySelector('[data-action="advance-phase"]')?.addEventListener("click", advancePhase);
   root.querySelector('[data-action="save-state"]')?.addEventListener("click", saveState);
@@ -620,6 +821,145 @@ async function saveAction(mode) {
   else loadAll();
 }
 
+async function createCharacter() {
+  const form = document.getElementById("character-form");
+  if (!form) return;
+  const data = new FormData(form);
+  const ownerId = state.profile.role === "dm" ? String(data.get("owner_id")) : state.profile.id;
+  const publicTraits = selectedValues(form, "public_traits");
+  const secretTraits = selectedValues(form, "secret_traits");
+  const pursuit = String(data.get("pursuit") ?? "");
+  const override = state.profile.role === "dm" && Boolean(data.get("override_validation"));
+  const attributes = {
+    body: numberField(data, "body"),
+    willpower: numberField(data, "willpower"),
+    wealth: numberField(data, "wealth"),
+    charm: numberField(data, "charm"),
+    intellect: numberField(data, "intellect"),
+    prestige: numberField(data, "prestige"),
+    perception: numberField(data, "perception"),
+    luck: numberField(data, "luck"),
+  };
+  const characterDraft = {
+    name: String(data.get("name") ?? "").trim(),
+    gender: String(data.get("gender") ?? "").trim(),
+    age: numberField(data, "age"),
+    ethnicity: String(data.get("ethnicity") ?? ""),
+    faith: String(data.get("faith") ?? ""),
+    faction_id: String(data.get("faction_id") ?? ""),
+    public_traits: publicTraits,
+    public_background: String(data.get("public_background") ?? "").trim(),
+  };
+  const retainers = parseRetainers(String(data.get("retainers") ?? ""));
+  const errors = override ? [] : validateCharacterDraft(characterDraft, attributes, publicTraits, secretTraits, pursuit, retainers);
+  if (errors.length) {
+    alert(errors.join("\n"));
+    return;
+  }
+  const skills = {
+    谈判: numberField(data, "skill_谈判"),
+    演讲: numberField(data, "skill_演讲"),
+    写作: numberField(data, "skill_写作"),
+    法律: numberField(data, "skill_法律"),
+    会计: numberField(data, "skill_会计"),
+  };
+  const inserted = await supabase.from("characters_public").insert({
+    owner_id: ownerId,
+    ...characterDraft,
+  }).select("id").single();
+  if (inserted.error) {
+    alert(inserted.error.message);
+    return;
+  }
+  const characterId = inserted.data.id;
+  const privateInsert = await supabase.from("character_private").insert({
+    character_id: characterId,
+    ...attributes,
+    skills,
+    secret_traits: secretTraits,
+    pursuit,
+    scandal_count: 0,
+  });
+  if (privateInsert.error) {
+    alert(privateInsert.error.message);
+    return;
+  }
+  if (retainers.length) {
+    const retainerRows = retainers.map((retainer) => ({ character_id: characterId, ...retainer }));
+    const retainerInsert = await supabase.from("retainers").insert(retainerRows);
+    if (retainerInsert.error) {
+      alert(retainerInsert.error.message);
+      return;
+    }
+  }
+  await loadAll();
+}
+
+function validateCharacterDraft(character, attributes, publicTraits, secretTraits, pursuit, retainers) {
+  const errors = [];
+  if (!character.name) errors.push("姓名不能为空。");
+  if (!pursuit || !PURSUITS.includes(pursuit)) errors.push("必须选择一个人生追求。");
+  const cost = traitCost(publicTraits, secretTraits, character.faction_id);
+  if (cost > 4) errors.push(`特质点超支：当前 ${cost} 点，最多 4 点。`);
+  for (const [name, , req] of PUBLIC_TRAITS) {
+    if (publicTraits.includes(name) && !meetsRequirement(req, character, attributes)) {
+      errors.push(`${name} 不满足前置：${traitRequirementLabel(req)}。`);
+    }
+  }
+  const retainerLimit = Math.floor((Number(attributes.charm) + Number(attributes.prestige)) / 50);
+  if (retainers.length > retainerLimit) errors.push(`亲信数量超出上限：当前 ${retainers.length} 个，上限 ${retainerLimit} 个。`);
+  return errors;
+}
+
+function traitCost(publicTraits, secretTraits, factionId) {
+  let total = 0;
+  for (const trait of publicTraits) total += PUBLIC_TRAITS.find(([name]) => name === trait)?.[1] ?? 0;
+  for (const trait of secretTraits) {
+    if (trait === "工会联系" && factionKey(factionId) !== "social_democrats") total += 2;
+    else total += SECRET_TRAITS.find(([name]) => name === trait)?.[1] ?? 0;
+  }
+  return total;
+}
+
+function meetsRequirement(req, character, attributes) {
+  if (!req) return true;
+  const [kind, value] = req.split(":");
+  if (kind === "ethnicity") return character.ethnicity === value;
+  if (kind === "intellect") return Number(attributes.intellect) >= Number(value);
+  if (kind === "age_min") return Number(character.age) >= Number(value);
+  if (kind === "age_max") return Number(character.age) <= Number(value);
+  return true;
+}
+
+function traitRequirementLabel(req) {
+  if (!req) return "";
+  const [kind, value] = req.split(":");
+  if (kind === "ethnicity") return `需要民族为${value}`;
+  if (kind === "intellect") return `需要智力至少${value}`;
+  if (kind === "age_min") return `需要年龄至少${value}`;
+  if (kind === "age_max") return `需要年龄不超过${value}`;
+  return req;
+}
+
+function selectedValues(form, name) {
+  return Array.from(form.querySelectorAll(`input[name="${name}"]:checked`)).map((input) => input.value);
+}
+
+function numberField(data, name) {
+  return Number(data.get(name) ?? 0);
+}
+
+function parseRetainers(text) {
+  return text.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [name = "", gender = "", age = "", ...notes] = line.split(/[，,]/).map((part) => part.trim());
+      return { name, gender, age: Number(age) || null, notes: notes.join("，") };
+    })
+    .filter((retainer) => retainer.name);
+}
+
 async function advancePhase() {
   const current = state.data.state?.current_phase ?? "turn_start";
   const index = PHASES.findIndex(([key]) => key === current);
@@ -650,7 +990,7 @@ async function assignPosition() {
 async function createVote() {
   const issue = document.getElementById("vote-issue").value.trim();
   if (!issue) return;
-  const rows = state.data.factions.map((f) => ({
+  const rows = state.data.factions.filter((f) => f.faction_type === "political").map((f) => ({
     issue,
     turn_number: state.data.state?.current_turn ?? 1,
     faction_id: f.id,
@@ -719,9 +1059,18 @@ function positionList() {
     ...state.data.characters.map((c) => [`character:${c.id}`, c.name]),
     ...state.data.retainers.map((r) => [`retainer:${r.id}`, `${r.name}（亲信）`]),
   ]);
+  const assignmentsByPosition = new Map();
+  for (const assignment of state.data.assignments) {
+    const list = assignmentsByPosition.get(assignment.position_id) ?? [];
+    list.push(escapeHtml(names.get(`${assignment.entity_type}:${assignment.entity_id}`) ?? "未知"));
+    assignmentsByPosition.set(assignment.position_id, list);
+  }
   return `
     <div class="positionList">
-      ${state.data.assignments.map((a) => `<div class="positionRow"><strong>${escapeHtml(a.positions?.name ?? "未知职位")}</strong><span>${escapeHtml(names.get(`${a.entity_type}:${a.entity_id}`) ?? "未知")}</span></div>`).join("")}
+      ${state.data.positions.filter((p) => p.is_government).map((p) => {
+        const holders = assignmentsByPosition.get(p.id);
+        return `<div class="positionRow ${holders?.length ? "" : "vacant"}"><strong>${escapeHtml(p.name)}</strong><span>${holders?.length ? holders.join("、") : "无"}</span></div>`;
+      }).join("")}
     </div>
   `;
 }
@@ -771,6 +1120,10 @@ function assignmentMap() {
 
 function factionName(id) {
   return state.data.factions.find((f) => f.id === id)?.short_name ?? "未定";
+}
+
+function factionKey(id) {
+  return state.data.factions.find((f) => f.id === id)?.key ?? "";
 }
 
 function phaseLabel(key) {
