@@ -242,9 +242,8 @@ async function loadAll() {
     return;
   }
   state.profile = profile.data;
-  const actionColumns = state.profile.role === "dm"
-    ? "*"
-    : "id, owner_id, turn_number, action_kind, actor_type, actor_id, title, category, target, description, resources, visibility, non_public_reason, requires_approval, status, approved_by, result_public, processed_at, created_at, updated_at";
+  const actionColumns = "id, owner_id, turn_number, action_kind, actor_type, actor_id, title, category, target, description, resources, visibility, non_public_reason, requires_approval, status, approved_by, result_public, processed_at, created_at, updated_at";
+  const allowedPrivateActionResults = supabase.rpc("visible_action_private_results");
 
   const queries = await Promise.all([
     supabase.from("game_state").select("*").eq("id", true).maybeSingle(),
@@ -261,14 +260,17 @@ async function loadAll() {
     supabase.from("parliament_votes").select("*, factions(short_name, color)").order("created_at", { ascending: false }),
     supabase.from("positions").select("*").order("sort_order"),
     supabase.from("profiles").select("*").order("created_at"),
+    allowedPrivateActionResults,
   ]);
-  const error = queries.find((item) => item.error)?.error;
+  const error = queries.slice(0, -1).find((item) => item.error)?.error;
   if (error) {
     state.error = error.message;
     render();
     return;
   }
-  const [gameState, characters, privateStats, retainers, retainerPrivate, assignments, actions, factions, groups, policies, foreignPowers, votes, positions, profiles] = queries;
+  const [gameState, characters, privateStats, retainers, retainerPrivate, assignments, actions, factions, groups, policies, foreignPowers, votes, positions, profiles, privateActionResults] = queries;
+  const privateResultsByAction = new Map((privateActionResults.data ?? []).map((item) => [item.action_id, item.result_private]));
+  const visibleActions = (actions.data ?? []).map((action) => ({ ...action, result_private: privateResultsByAction.get(action.id) ?? "" }));
   state.data = {
     state: gameState.data,
     characters: characters.data ?? [],
@@ -276,7 +278,7 @@ async function loadAll() {
     retainers: retainers.data ?? [],
     retainerPrivate: retainerPrivate.data ?? [],
     assignments: assignments.data ?? [],
-    actions: actions.data ?? [],
+    actions: visibleActions,
     factions: factions.data ?? [],
     groups: groups.data ?? [],
     policies: policies.data ?? [],
@@ -845,7 +847,7 @@ function actionPanel() {
   const retainers = state.data.retainers.filter((r) => ownIds.has(r.character_id));
   const actors = [
     ...ownCharacters.map((c) => ["character", c.id, c.name]),
-    ...retainers.map((r) => ["retainer", r.id, `${r.name}（亲信）`]),
+    ...retainers.map((r) => ["retainer", r.id, r.name]),
   ];
   const ownStats = state.data.privateStats.filter((s) => ownIds.has(s.character_id));
   const hasYouth = ownCharacters.some((c) => c.public_traits?.includes("年轻气盛")) || ownStats.some((s) => s.secret_traits?.includes("年轻气盛"));
@@ -1777,7 +1779,7 @@ function tagBlock(title, items = []) {
 }
 
 function actionCard(action) {
-  const canSeePrivate = state.profile.role === "dm";
+  const canSeePrivate = state.profile.role === "dm" || action.owner_id === state.profile.id;
   return `
     <article class="actionCard">
       <div class="actionHeader">
@@ -1786,7 +1788,7 @@ function actionCard(action) {
       </div>
       <p>${escapeHtml(action.description)}</p>
       ${action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
-      ${canSeePrivate && action.result_private ? `<div class="resultBox private"><strong>私密结果（仅DM可见）</strong><span>${escapeHtml(action.result_private)}</span></div>` : ""}
+      ${canSeePrivate && action.result_private ? `<div class="resultBox private"><strong>私密结果（仅DM和本人可见）</strong><span>${escapeHtml(action.result_private)}</span></div>` : ""}
     </article>
   `;
 }
@@ -1794,7 +1796,7 @@ function actionCard(action) {
 function positionList() {
   const names = new Map([
     ...state.data.characters.map((c) => [`character:${c.id}`, c.name]),
-    ...state.data.retainers.map((r) => [`retainer:${r.id}`, `${r.name}（亲信）`]),
+    ...state.data.retainers.map((r) => [`retainer:${r.id}`, r.name]),
   ]);
   const assignmentsByPosition = new Map();
   for (const assignment of state.data.assignments) {
@@ -1815,7 +1817,7 @@ function positionList() {
 function entityOptions() {
   return [
     ...state.data.characters.map((c) => [`character:${c.id}`, c.name]),
-    ...state.data.retainers.map((r) => [`retainer:${r.id}`, `${r.name}（亲信）`]),
+    ...state.data.retainers.map((r) => [`retainer:${r.id}`, r.name]),
   ].map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join("");
 }
 
