@@ -437,7 +437,7 @@ function characterPanel() {
               ${retainers.map((retainer) => `
                 <div class="retainerCard">
                   <strong>${escapeHtml(retainer.name)}</strong>
-                  <span>${escapeHtml(retainer.gender ?? "")}，${retainer.age ?? "-"}岁</span>
+                  <span>${retainer.gender && retainer.age ? `${escapeHtml(retainer.gender)}，${retainer.age}岁` : "资料不完整"}</span>
                   <span>${escapeHtml((assignmentNames[`retainer:${retainer.id}`] ?? ["无职位"]).join("、"))}</span>
                   <small>${escapeHtml(retainer.notes ?? "")}</small>
                 </div>
@@ -469,18 +469,18 @@ function characterCreateForm() {
       </div>
       <h3>属性</h3>
       <div class="statInputGrid">
-        ${statInput("body", "体质", 40)}
-        ${statInput("willpower", "意志", 40)}
-        ${statInput("wealth", "财富", 40)}
-        ${statInput("charm", "魅力", 40)}
-        ${statInput("intellect", "智力", 40)}
-        ${statInput("prestige", "威望", 20)}
-        ${statInput("perception", "感知", 40)}
-        ${statInput("luck", "幸运", 45)}
+        ${statInput("body", "体质", 40, 40, 80)}
+        ${statInput("willpower", "意志", 40, 40, 80)}
+        ${statInput("wealth", "财富", 40, 10, 90)}
+        ${statInput("charm", "魅力", 40, 40, 80)}
+        ${statInput("intellect", "智力", 40, 40, 80)}
+        ${statInput("prestige", "威望", 20, 20, 100)}
+        ${statInput("perception", "感知", 40, 40, 80)}
+        ${statInput("luck", "幸运", 45, 15, 90, 5)}
       </div>
       <h3>技能</h3>
       <div class="statInputGrid">
-        ${["谈判", "演讲", "写作", "法律", "会计"].map((skill) => `<label>${skill}<input name="skill_${skill}" type="number" min="0" max="100" value="10"></label>`).join("")}
+        ${["谈判", "演讲", "写作", "法律", "会计"].map((skill) => `<label>${skill}<input name="skill_${skill}" type="number" min="10" max="100" value="10"></label>`).join("")}
       </div>
       <div class="traitColumns">
         <div>
@@ -506,8 +506,8 @@ function characterCreateForm() {
   `;
 }
 
-function statInput(name, label, value) {
-  return `<label>${label}<input name="${name}" type="number" min="0" max="100" value="${value}"></label>`;
+function statInput(name, label, value, min, max, step = 1) {
+  return `<label>${label}<input name="${name}" type="number" min="${min}" max="${max}" step="${step}" value="${value}"></label>`;
 }
 
 function traitCheckbox(group, name, cost, req) {
@@ -863,6 +863,11 @@ async function createCharacter() {
     法律: numberField(data, "skill_法律"),
     会计: numberField(data, "skill_会计"),
   };
+  const skillErrors = override ? [] : validateSkills(skills, attributes.intellect);
+  if (skillErrors.length) {
+    alert(skillErrors.join("\n"));
+    return;
+  }
   const inserted = await supabase.from("characters_public").insert({
     owner_id: ownerId,
     ...characterDraft,
@@ -899,8 +904,13 @@ function validateCharacterDraft(character, attributes, publicTraits, secretTrait
   const errors = [];
   if (!character.name) errors.push("姓名不能为空。");
   if (!pursuit || !PURSUITS.includes(pursuit)) errors.push("必须选择一个人生追求。");
+  const attributeErrors = validateAttributes(character, attributes, publicTraits);
+  errors.push(...attributeErrors);
   const cost = traitCost(publicTraits, secretTraits, character.faction_id);
   if (cost > 4) errors.push(`特质点超支：当前 ${cost} 点，最多 4 点。`);
+  if (publicTraits.includes("资本家") && publicTraits.includes("苦行僧")) {
+    errors.push("资本家和苦行僧的财富范围冲突，不能同时选择。");
+  }
   for (const [name, , req] of PUBLIC_TRAITS) {
     if (publicTraits.includes(name) && !meetsRequirement(req, character, attributes)) {
       errors.push(`${name} 不满足前置：${traitRequirementLabel(req)}。`);
@@ -908,7 +918,53 @@ function validateCharacterDraft(character, attributes, publicTraits, secretTrait
   }
   const retainerLimit = Math.floor((Number(attributes.charm) + Number(attributes.prestige)) / 50);
   if (retainers.length > retainerLimit) errors.push(`亲信数量超出上限：当前 ${retainers.length} 个，上限 ${retainerLimit} 个。`);
+  retainers.forEach((retainer, index) => {
+    if (!retainer.name || !retainer.gender || !retainer.age) {
+      errors.push(`第 ${index + 1} 个亲信格式不完整，请按“姓名，性别，年龄，备注”填写。`);
+    }
+  });
   return errors;
+}
+
+function validateAttributes(character, attributes, publicTraits) {
+  const errors = [];
+  const coreStats = ["body", "willpower", "wealth", "charm", "intellect", "perception"];
+  const labels = { body: "体质", willpower: "意志", wealth: "财富", charm: "魅力", intellect: "智力", perception: "感知" };
+  const sum = coreStats.reduce((total, key) => total + Number(attributes[key] ?? 0), 0);
+  if (sum !== 400) errors.push(`六项属性点合计必须为 400；当前为 ${sum}。`);
+  for (const key of ["body", "willpower", "charm", "intellect", "perception"]) {
+    if (!inRange(attributes[key], 40, 80)) errors.push(`${labels[key]}必须在 40-80 之间。`);
+  }
+  const [wealthMin, wealthMax] = wealthRange(publicTraits);
+  if (!inRange(attributes.wealth, wealthMin, wealthMax)) errors.push(`财富必须在 ${wealthMin}-${wealthMax} 之间。`);
+  const age = Number(character.age ?? 0);
+  if (!Number.isInteger(age) || age <= 0) errors.push("年龄必须是正整数。");
+  if (!inRange(attributes.prestige, 20, Math.max(20, age))) errors.push(`威望最低 20，且不能大于年龄；当前年龄 ${age}。`);
+  if (!inRange(attributes.luck, 15, 90) || Number(attributes.luck) % 5 !== 0) errors.push("幸运必须是 15-90 之间的 5 的倍数。");
+  return errors;
+}
+
+function validateSkills(skills, intellect) {
+  const errors = [];
+  let spent = 0;
+  for (const [name, value] of Object.entries(skills)) {
+    if (!inRange(value, 10, 100)) errors.push(`${name}必须在 10-100 之间。`);
+    spent += Math.max(0, Number(value) - 10);
+  }
+  const budget = Number(intellect) * 2;
+  if (spent !== budget) errors.push(`技能点投入必须等于 智力×2，即 ${budget} 点；当前投入 ${spent} 点。`);
+  return errors;
+}
+
+function wealthRange(publicTraits) {
+  if (publicTraits.includes("苦行僧")) return [10, 20];
+  if (publicTraits.includes("资本家")) return [40, 90];
+  return [40, 80];
+}
+
+function inRange(value, min, max) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= min && number <= max;
 }
 
 function traitCost(publicTraits, secretTraits, factionId) {
