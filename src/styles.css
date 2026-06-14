@@ -102,6 +102,7 @@ h3 {
 
 .primaryButton,
 .ghostButton,
+.dangerButton,
 .iconButton,
 .tab,
 .voteRow button {
@@ -128,6 +129,12 @@ h3 {
   color: #30363d;
   background: #f8f6f1;
   border-color: #d6d0c6;
+}
+
+.dangerButton {
+  color: #9b2332;
+  background: #f8e7ea;
+  border-color: #e4b7bf;
 }
 
 .iconButton {
@@ -229,6 +236,14 @@ h3 {
 .panelHeader p {
   margin-bottom: 0;
   color: #69727c;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .scorePill,

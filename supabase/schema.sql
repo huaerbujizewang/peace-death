@@ -265,6 +265,40 @@ as $$
   )
 $$;
 
+create or replace function public.delete_character(character_uuid uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  owner_uuid uuid;
+begin
+  select owner_id into owner_uuid
+  from public.characters_public
+  where id = character_uuid;
+
+  if owner_uuid is null then
+    raise exception 'character not found';
+  end if;
+
+  if owner_uuid <> auth.uid() and not public.is_dm() then
+    raise exception 'not allowed';
+  end if;
+
+  delete from public.position_assignments
+  where (entity_type = 'character' and entity_id = character_uuid)
+     or (entity_type = 'retainer' and entity_id in (
+       select id from public.retainers where character_id = character_uuid
+     ));
+
+  delete from public.characters_public
+  where id = character_uuid;
+end;
+$$;
+
+grant execute on function public.delete_character(uuid) to authenticated;
+
 alter table public.profiles enable row level security;
 alter table public.factions enable row level security;
 alter table public.positions enable row level security;

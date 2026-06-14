@@ -421,13 +421,16 @@ function characterPanel() {
         const stats = statsByCharacter.get(character.id);
         const retainers = state.data.retainers.filter((r) => r.character_id === character.id);
         return `
-          <section class="panel">
+          <section class="panel characterCard">
             <div class="panelHeader">
               <div>
                 <h2>${escapeHtml(character.name)}</h2>
                 <p>${escapeHtml(character.ethnicity)} / ${escapeHtml(character.faith)} / ${escapeHtml(factionName(character.faction_id))}</p>
               </div>
-              <span class="scorePill">${escapeHtml((assignmentNames[`character:${character.id}`] ?? ["无职位"]).join("、"))}</span>
+              <div class="cardActions">
+                <span class="scorePill">${escapeHtml((assignmentNames[`character:${character.id}`] ?? ["无职位"]).join("、"))}</span>
+                ${canDeleteCharacter(character) ? `<button class="dangerButton" data-delete-character="${character.id}" data-character-name="${escapeAttr(character.name)}" type="button">删除</button>` : ""}
+              </div>
             </div>
             <p class="story">${escapeHtml(character.public_background || "暂无公开背景。")}</p>
             ${tagBlock("公开特质", character.public_traits)}
@@ -758,6 +761,9 @@ function bindTab() {
   });
 
   root.querySelector('[data-action="create-character"]')?.addEventListener("click", createCharacter);
+  root.querySelectorAll("[data-delete-character]").forEach((button) => {
+    button.addEventListener("click", () => deleteCharacter(button.dataset.deleteCharacter, button.dataset.characterName));
+  });
 
   root.querySelectorAll("[data-approve]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -898,6 +904,14 @@ async function createCharacter() {
     }
   }
   await loadAll();
+}
+
+async function deleteCharacter(characterId, characterName) {
+  const typed = prompt(`要删除角色卡“${characterName}”，请输入完整角色名确认。`);
+  if (typed !== characterName) return;
+  const { error } = await supabase.rpc("delete_character", { character_uuid: characterId });
+  if (error) alert(error.message);
+  else await loadAll();
 }
 
 function validateCharacterDraft(character, attributes, publicTraits, secretTraits, pursuit, retainers) {
@@ -1176,6 +1190,10 @@ function assignmentMap() {
 
 function factionName(id) {
   return state.data.factions.find((f) => f.id === id)?.short_name ?? "未定";
+}
+
+function canDeleteCharacter(character) {
+  return state.profile.role === "dm" || character.owner_id === state.profile.id;
 }
 
 function factionKey(id) {
