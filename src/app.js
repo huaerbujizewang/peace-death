@@ -1148,6 +1148,8 @@ function parliamentPanel() {
 function parliamentVoteCard(group) {
   const isDm = state.profile.role === "dm";
   const totals = voteTotals(group.rows);
+  const settlement = group.rows.find((row) => row.notes)?.notes ?? "";
+  const voteIds = group.rows.map((row) => row.id).join(",");
   return `
     <article class="parliamentCard">
       <div class="parliamentHeader">
@@ -1161,6 +1163,7 @@ function parliamentVoteCard(group) {
           <b class="abstain">弃权 ${totals.abstain}</b>
         </div>
       </div>
+      ${settlement ? `<div class="resultBox"><strong>议会结算</strong><span>${escapeHtml(settlement)}</span></div>` : ""}
       <div class="chamber" aria-label="${escapeAttr(group.issue)} 席位图">
         ${parliamentDots(group.rows)}
       </div>
@@ -1180,6 +1183,12 @@ function parliamentVoteCard(group) {
           </div>
         `}).join("")}
       </div>
+      ${isDm && group.rows.length ? `
+        <div class="parliamentActions">
+          <button class="primaryButton" data-settle-vote="${escapeAttr(voteIds)}">结算投票</button>
+          <button class="dangerButton" data-delete-vote="${escapeAttr(voteIds)}" data-vote-issue="${escapeAttr(group.issue)}">删除投票</button>
+        </div>
+      ` : ""}
     </article>
   `;
 }
@@ -1398,6 +1407,12 @@ function bindTab() {
   root.querySelector('[data-action="create-vote"]')?.addEventListener("click", createVote);
   root.querySelectorAll("[data-vote]").forEach((input) => {
     input.addEventListener("change", () => updateVote(input.dataset.vote, input.dataset.field, input.value));
+  });
+  root.querySelectorAll("[data-settle-vote]").forEach((button) => {
+    button.addEventListener("click", () => settleVote(button.dataset.settleVote));
+  });
+  root.querySelectorAll("[data-delete-vote]").forEach((button) => {
+    button.addEventListener("click", () => deleteVote(button.dataset.deleteVote, button.dataset.voteIssue));
   });
   root.querySelector('[data-action="advance-phase"]')?.addEventListener("click", advancePhase);
   root.querySelector('[data-action="previous-phase"]')?.addEventListener("click", previousPhase);
@@ -1993,6 +2008,34 @@ async function updateVote(id, field, currentValue) {
   const { error } = await supabase.from("parliament_votes").update(patch).eq("id", id);
   if (error) alert(error.message);
   else loadAll();
+}
+
+async function settleVote(idsText) {
+  const ids = voteIdsFromText(idsText);
+  const rows = state.data.votes.filter((vote) => ids.includes(vote.id));
+  if (!rows.length) return;
+  const totals = voteTotals(rows);
+  const verdict = totals.yes > totals.no ? "通过" : totals.yes < totals.no ? "否决" : "僵持";
+  const issue = rows[0]?.issue ?? "未命名议案";
+  const defaultSummary = `${issue}：${verdict}。赞成 ${totals.yes}，反对 ${totals.no}，弃权 ${totals.abstain}。`;
+  const summary = prompt("议会投票结算", defaultSummary);
+  if (summary === null) return;
+  const { error } = await supabase.from("parliament_votes").update({ notes: summary.trim() || defaultSummary }).in("id", ids);
+  if (error) alert(error.message);
+  else loadAll();
+}
+
+async function deleteVote(idsText, issue) {
+  const ids = voteIdsFromText(idsText);
+  if (!ids.length) return;
+  if (!confirm(`确定删除议案“${issue || "未命名议案"}”的整组投票吗？`)) return;
+  const { error } = await supabase.from("parliament_votes").delete().in("id", ids);
+  if (error) alert(error.message);
+  else loadAll();
+}
+
+function voteIdsFromText(idsText) {
+  return String(idsText ?? "").split(",").map((id) => id.trim()).filter(Boolean);
 }
 
 function normalizeVoteValues(values, seats, changedField) {

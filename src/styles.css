@@ -929,6 +929,13 @@ textarea {
   gap: 8px;
 }
 
+.parliamentActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .voteRow {
   grid-template-columns: minmax(140px, 0.8fr) 70px repeat(3, minmax(150px, 1fr));
 }
