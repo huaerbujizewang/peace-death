@@ -1,5 +1,5 @@
 insert into public.game_state (id, current_turn, current_phase, legitimacy_base, economy_status, budget_status)
-values (true, 1, 'turn_start', 33, '一切如常', '平衡')
+values (true, 1, 'turn_start', 40, '一切如常', '平衡')
 on conflict (id) do update set legitimacy_base = excluded.legitimacy_base;
 
 insert into public.factions (key, name, short_name, faction_type, influence, color, supporters, sort_order)
@@ -111,6 +111,7 @@ inserted as (
     ethnicity,
     faith,
     faction_id,
+    prestige,
     public_traits,
     public_background,
     is_preset
@@ -123,6 +124,7 @@ inserted as (
     '约尔裔',
     '瓦勒派',
     ducal.faction_id,
+    30,
     '{"约尔贵族","资本家","精通双语","年轻气盛"}',
     '作为前任公爵埃德沃德二世的独生女，在父亲遭到刺杀后，高中还没有毕业的新公爵不得不走出象牙塔，承担起王室领袖的责任。',
     true

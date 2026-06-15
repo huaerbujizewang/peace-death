@@ -53,6 +53,7 @@ create table if not exists public.characters_public (
   ethnicity text not null,
   faith text not null,
   faction_id uuid references public.factions(id),
+  prestige integer not null default 20,
   public_traits text[] not null default '{}',
   public_background text not null default '',
   active boolean not null default true,
@@ -111,7 +112,7 @@ create table if not exists public.game_state (
   current_turn integer not null default 1,
   max_turns integer not null default 5,
   current_phase text not null default 'turn_start',
-  legitimacy_base numeric not null default 33,
+  legitimacy_base numeric not null default 40,
   legitimacy_modifier numeric not null default 0,
   economy_status text not null default '一切如常',
   budget_status text not null default '平衡',
@@ -299,6 +300,126 @@ $$;
 
 grant execute on function public.delete_character(uuid) to authenticated;
 
+alter table public.characters_public
+  add column if not exists prestige integer not null default 20;
+
+update public.characters_public c
+set prestige = cp.prestige
+from public.character_private cp
+where cp.character_id = c.id;
+
+create or replace function public.sync_public_character_prestige()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.characters_public
+  set prestige = new.prestige,
+      updated_at = now()
+  where id = new.character_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists sync_public_character_prestige_trigger on public.character_private;
+create trigger sync_public_character_prestige_trigger
+after insert or update of prestige on public.character_private
+for each row execute function public.sync_public_character_prestige();
+
+create or replace function public.enforce_single_player_character()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  owner_role text;
+begin
+  if new.active is not true then
+    return new;
+  end if;
+
+  select role::text into owner_role
+  from public.profiles
+  where id = new.owner_id;
+
+  if owner_role = 'dm' then
+    return new;
+  end if;
+
+  if exists (
+    select 1
+    from public.characters_public c
+    where c.owner_id = new.owner_id
+      and c.active is true
+      and c.id <> new.id
+  ) then
+    raise exception 'players can only have one active character';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_single_player_character_trigger on public.characters_public;
+create trigger enforce_single_player_character_trigger
+before insert or update of owner_id, active on public.characters_public
+for each row execute function public.enforce_single_player_character();
+
+create or replace function public.visible_action_private_results()
+returns table(action_id uuid, result_private text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select a.id, a.result_private
+  from public.actions a
+  where a.result_private <> ''
+    and (public.is_dm() or a.owner_id = auth.uid())
+$$;
+
+grant execute on function public.visible_action_private_results() to authenticated;
+
+with normalized as (
+  select
+    id,
+    seats,
+    least(greatest(yes_votes, 0), seats) as yes_fixed,
+    no_votes
+  from public.parliament_votes
+),
+normalized_again as (
+  select
+    id,
+    seats,
+    yes_fixed,
+    least(greatest(no_votes, 0), seats - yes_fixed) as no_fixed
+  from normalized
+)
+update public.parliament_votes pv
+set
+  yes_votes = n.yes_fixed,
+  no_votes = n.no_fixed,
+  abstain_votes = n.seats - n.yes_fixed - n.no_fixed
+from normalized_again n
+where pv.id = n.id;
+
+alter table public.parliament_votes
+  drop constraint if exists parliament_votes_exact_seat_total;
+
+alter table public.parliament_votes
+  add constraint parliament_votes_exact_seat_total
+  check (
+    seats >= 0
+    and yes_votes >= 0
+    and no_votes >= 0
+    and abstain_votes >= 0
+    and yes_votes + no_votes + abstain_votes = seats
+  );
+
 alter table public.profiles enable row level security;
 alter table public.factions enable row level security;
 alter table public.positions enable row level security;
@@ -394,6 +515,30 @@ create policy "actions readable by scope" on public.actions for select to authen
   )
 );
 
+revoke select on public.actions from authenticated;
+grant select (
+  id,
+  owner_id,
+  turn_number,
+  action_kind,
+  actor_type,
+  actor_id,
+  title,
+  category,
+  target,
+  description,
+  resources,
+  visibility,
+  non_public_reason,
+  requires_approval,
+  status,
+  approved_by,
+  result_public,
+  processed_at,
+  created_at,
+  updated_at
+) on public.actions to authenticated;
+
 drop policy if exists "owners insert actions" on public.actions;
 create policy "owners insert actions" on public.actions for insert to authenticated with check (
   public.is_dm()
@@ -417,6 +562,8 @@ create policy "owners update unprocessed actions" on public.actions for update t
   or (owner_id = auth.uid() and status in ('draft', 'submitted', 'needs_approval'))
   or (public.is_government_head() and action_kind = 'government' and status in ('approved', 'rejected'))
 );
+drop policy if exists "dm deletes actions" on public.actions;
+create policy "dm deletes actions" on public.actions for delete to authenticated using (public.is_dm());
 
 drop policy if exists "votes readable" on public.parliament_votes;
 create policy "votes readable" on public.parliament_votes for select to authenticated using (true);
