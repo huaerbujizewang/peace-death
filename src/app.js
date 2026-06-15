@@ -237,6 +237,20 @@ const PEOPLE = [
   },
 ];
 
+const FOREIGN_LEADER_GROUP = "外国首领";
+
+const PERSON_FACTION_KEYS = {
+  "汉娜·派·提克多德": "ducal_loyalists",
+  "马蒂亚斯·凡·德尔梅尔": "social_democrats",
+  "伊莲娜·德·沃尔夫": "social_democrats",
+  "克洛蒂尔德·德·拉谢尔": "blue_falcon",
+  "奥古斯特·德·莫朗": "blue_falcon",
+  "赫尔曼·冯·埃尔茨": "yor_unity",
+  "弗里德里希·范·哈尔": "yor_unity",
+  "维克托·德·格伦瓦尔": "ducal_loyalists",
+  "塞勒斯·派·奥列克": "ducal_loyalists",
+};
+
 const POLICY_CATALOG = {
   regime: ["政体", { dual_monarchy: "二元君主立宪制", ceremonial_monarchy: "虚位君主立宪制", parliamentary_republic: "议会共和制", presidential_republic: "总统共和制", military_government: "军政府" }],
   civil_service: ["公务员制度", { independent: "公务员系统独立", bureaucrats_in_politics: "允许文官参政", free_participation: "允许自由参政" }],
@@ -775,12 +789,46 @@ function overview() {
         <div class="moodGrid">
           ${state.data.groups.map((g) => `<span class="mood ${g.mood <= -1 ? "low" : g.mood === 2 ? "high" : ""}">${escapeHtml(g.name)}：${moodLabel(g.mood)}</span>`).join("")}
         </div>
+        ${supportMatrixPanel()}
         ${prestigeReferencePanel()}
         <h3>国家情报</h3>
         ${countryIntelGrid()}
       </section>
     </div>
   `;
+}
+
+function supportMatrixPanel() {
+  const socialGroups = state.data.groups.map((group) => group.name);
+  const absorbed = new Set();
+  const factions = sortedPoliticalFactions().filter((faction) => faction.key !== "unaligned");
+  for (const faction of factions) {
+    for (const supporter of faction.supporters ?? []) absorbed.add(supporter);
+  }
+  const unabsorbed = socialGroups.filter((name) => !absorbed.has(name));
+  return `
+    <div class="supportMatrix">
+      <h3>派系吸纳群体</h3>
+      <div class="supportRows">
+        ${factions.map((faction) => `
+          <div class="supportRow">
+            <strong><i style="background:${escapeAttr(faction.color)}"></i>${escapeHtml(faction.short_name)}</strong>
+            <span>${supporterTags(faction.supporters)}</span>
+          </div>
+        `).join("")}
+        <div class="supportRow unabsorbed">
+          <strong><i></i>未介入</strong>
+          <span>${supporterTags(unabsorbed)}</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function supporterTags(items = []) {
+  return items.length
+    ? items.map((item) => `<b>${escapeHtml(item)}</b>`).join("")
+    : `<em>无</em>`;
 }
 
 function legitimacyThresholdPanel(total) {
@@ -887,12 +935,14 @@ function peoplePanel() {
 }
 
 function personCard(person) {
+  const positions = assignmentMap()[`person:${personEntityId(person.name)}`] ?? [];
   return `
     <article class="personCard">
       <img src="${portraitPath(person.portrait)}" alt="${escapeAttr(person.name)}头像" loading="lazy">
       <div>
         <span>${escapeHtml(person.role)}</span>
         <h4>${escapeHtml(person.name)}</h4>
+        ${positions.length ? `<div class="personPositions">${positions.map((position) => `<b>${escapeHtml(position)}</b>`).join("")}</div>` : ""}
         ${person.lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
       </div>
     </article>
@@ -901,6 +951,28 @@ function personCard(person) {
 
 function portraitPath(fileName) {
   return `./assets/portraits/${encodeURI(fileName)}`;
+}
+
+function assignablePeople() {
+  return PEOPLE.filter((person) => person.group !== FOREIGN_LEADER_GROUP);
+}
+
+function personEntityId(name) {
+  const text = `peace-death-person:${name}`;
+  const bytes = Array(16).fill(0);
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    bytes[i % 16] = (bytes[i % 16] * 31 + code + i) & 255;
+    bytes[(i * 7) % 16] = (bytes[(i * 7) % 16] ^ (code >> 8) ^ code) & 255;
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function personByEntityId(id) {
+  return assignablePeople().find((person) => personEntityId(person.name) === id) ?? null;
 }
 
 function policyRow(policy) {
@@ -1081,6 +1153,7 @@ function characterPanel() {
       ${characters.map((character) => {
         const stats = statsByCharacter.get(character.id);
         const retainers = state.data.retainers.filter((r) => r.character_id === character.id);
+        const canSeeRetainers = dm || character.owner_id === state.profile.id;
         return `
           <section class="panel characterCard">
             <div class="panelHeader">
@@ -1097,17 +1170,19 @@ function characterPanel() {
             <p class="story">${escapeHtml(character.public_background || "暂无公开背景。")}</p>
             ${tagBlock("公开特质", character.public_traits)}
             ${stats ? `<h3>私密信息</h3>${statGrid(stats)}${tagBlock("秘密特质", stats.secret_traits)}${tagBlock("人生追求", [stats.pursuit].filter(Boolean))}${tagBlock("黑料", scandalLabels(stats.scandals))}` : ""}
-            <h3>亲信</h3>
-            <div class="retainerGrid">
-              ${retainers.map((retainer) => `
-                <div class="retainerCard">
-                  <strong>${escapeHtml(retainer.name)}</strong>
-                  <span>${retainer.gender && retainer.age ? `${escapeHtml(retainer.gender)}，${retainer.age}岁` : "资料不完整"}</span>
-                  <span>${escapeHtml((assignmentNames[`retainer:${retainer.id}`] ?? ["无职位"]).join("、"))}</span>
-                  <small>${escapeHtml(retainer.notes ?? "")}</small>
-                </div>
-              `).join("")}
-            </div>
+            ${canSeeRetainers ? `
+              <h3>亲信</h3>
+              <div class="retainerGrid">
+                ${retainers.map((retainer) => `
+                  <div class="retainerCard">
+                    <strong>${escapeHtml(retainer.name)}</strong>
+                    <span>${retainer.gender && retainer.age ? `${escapeHtml(retainer.gender)}，${retainer.age}岁` : "资料不完整"}</span>
+                    <span>${escapeHtml((assignmentNames[`retainer:${retainer.id}`] ?? ["无职位"]).join("、"))}</span>
+                    <small>${escapeHtml(retainer.notes ?? "")}</small>
+                  </div>
+                `).join("")}
+              </div>
+            ` : ""}
             ${dm ? dmCharacterEditor(character, stats) : ""}
           </section>
         `;
@@ -1506,6 +1581,7 @@ function dmPanel() {
             </label>
           `).join("")}
         </div>
+        ${dmSupporterEditor()}
         <button class="ghostButton" data-action="save-state">保存国家修正</button>
       </section>
       <section class="panel">
@@ -1548,6 +1624,31 @@ function dmPanel() {
         </div>
       </section>
     </div>
+  `;
+}
+
+function dmSupporterEditor() {
+  const groups = state.data.groups.map((group) => group.name);
+  const factions = sortedPoliticalFactions().filter((faction) => faction.key !== "unaligned");
+  return `
+    <h3>派系吸纳群体</h3>
+    <div class="supportEditor">
+      ${factions.map((faction) => {
+        const supporters = new Set(faction.supporters ?? []);
+        return `
+          <fieldset>
+            <legend><i style="background:${escapeAttr(faction.color)}"></i>${escapeHtml(faction.short_name)}</legend>
+            ${groups.map((group) => `
+              <label>
+                <input type="checkbox" data-faction-supporter="${faction.id}" value="${escapeAttr(group)}" ${supporters.has(group) ? "checked" : ""}>
+                ${escapeHtml(group)}
+              </label>
+            `).join("")}
+          </fieldset>
+        `;
+      }).join("")}
+    </div>
+    <button class="ghostButton" data-action="save-supporters" type="button">保存派系吸纳群体</button>
   `;
 }
 
@@ -1789,6 +1890,7 @@ function bindTab() {
   root.querySelector('[data-action="save-phase"]')?.addEventListener("click", savePhase);
   root.querySelector('[data-action="reset-turn"]')?.addEventListener("click", resetTurn);
   root.querySelector('[data-action="save-state"]')?.addEventListener("click", saveState);
+  root.querySelector('[data-action="save-supporters"]')?.addEventListener("click", saveSupporters);
   root.querySelector('[data-action="assign-position"]')?.addEventListener("click", assignPosition);
   root.querySelectorAll("[data-unassign-position]").forEach((button) => {
     button.addEventListener("click", () => unassignPosition(button.dataset.unassignPosition, button.dataset.assignmentName));
@@ -2452,6 +2554,23 @@ async function assignPosition() {
   }
 }
 
+async function saveSupporters() {
+  const factions = sortedPoliticalFactions().filter((faction) => faction.key !== "unaligned");
+  const updates = factions.map((faction) => {
+    const supporters = Array.from(root.querySelectorAll(`[data-faction-supporter="${faction.id}"]:checked`))
+      .map((input) => input.value);
+    return supabase.from("factions").update({ supporters }).eq("id", faction.id);
+  });
+  const results = await Promise.all(updates);
+  const error = results.find((result) => result.error)?.error;
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  await recordActivity("update_supporters", "factions");
+  loadAll();
+}
+
 async function unassignPosition(assignmentId, assignmentName) {
   if (!confirm(`确定撤任「${assignmentName}」吗？`)) return;
   const { error } = await supabase.from("position_assignments").delete().eq("id", assignmentId);
@@ -2657,6 +2776,7 @@ function positionList() {
   const names = new Map([
     ...state.data.characters.map((c) => [`character:${c.id}`, c.name]),
     ...state.data.retainers.map((r) => [`retainer:${r.id}`, r.name]),
+    ...assignablePeople().map((person) => [`person:${personEntityId(person.name)}`, person.name]),
   ]);
   const assignmentsByPosition = new Map();
   for (const assignment of state.data.assignments) {
@@ -2693,8 +2813,9 @@ function positionList() {
 
 function entityOptions() {
   return [
-    ...state.data.characters.map((c) => [`character:${c.id}`, c.name]),
-    ...state.data.retainers.map((r) => [`retainer:${r.id}`, r.name]),
+    ...state.data.characters.map((c) => [`character:${c.id}`, `PC：${c.name}`]),
+    ...state.data.retainers.map((r) => [`retainer:${r.id}`, `亲信：${r.name}`]),
+    ...assignablePeople().map((person) => [`person:${personEntityId(person.name)}`, `人物：${person.name}`]),
   ].map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join("");
 }
 
@@ -2794,6 +2915,11 @@ function positionHolder(positionKey) {
 function entityFactionId(entity) {
   if (entity.entity_type === "character") {
     return state.data.characters.find((character) => character.id === entity.entity_id)?.faction_id ?? null;
+  }
+  if (entity.entity_type === "person") {
+    const person = personByEntityId(entity.entity_id);
+    const factionKeyForPerson = person ? PERSON_FACTION_KEYS[person.name] : "";
+    return state.data.factions.find((faction) => faction.key === factionKeyForPerson)?.id ?? null;
   }
   const retainer = state.data.retainers.find((item) => item.id === entity.entity_id);
   if (!retainer) return null;

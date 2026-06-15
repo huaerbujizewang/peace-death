@@ -473,6 +473,70 @@ h3 {
   gap: 10px;
 }
 
+.supportMatrix {
+  margin-top: 14px;
+}
+
+.supportRows {
+  display: grid;
+  gap: 8px;
+}
+
+.supportRow {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.36fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid #ded8cd;
+  border-radius: 6px;
+  background: #fbfaf7;
+}
+
+.supportRow strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #30363d;
+}
+
+.supportRow i,
+.supportEditor legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #9aa1a8;
+  flex: 0 0 auto;
+}
+
+.supportRow span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.supportRow b,
+.personPositions b {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: #46505a;
+  background: #ece8df;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.supportRow em {
+  color: #7c858f;
+  font-style: normal;
+}
+
+.supportRow.unabsorbed {
+  background: #f7f4ee;
+}
+
 .prestigeReference,
 .thresholdReference {
   margin-top: 14px;
@@ -760,6 +824,45 @@ h3 {
   color: #69727c;
 }
 
+.supportEditor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.supportEditor fieldset {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #ded8cd;
+  border-radius: 6px;
+  background: #fbfaf7;
+}
+
+.supportEditor legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px;
+  color: #30363d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.supportEditor label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.supportEditor input {
+  width: auto;
+}
+
 .mood,
 .tagBlock b {
   display: inline-flex;
@@ -1005,6 +1108,13 @@ textarea {
   margin: 4px 0 9px;
   color: #20242a;
   font-size: 18px;
+}
+
+.personPositions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 9px;
 }
 
 .personCard p {
@@ -1296,7 +1406,8 @@ textarea {
 
   .monitorGrid,
   .activityItem,
-  .ruleRow {
+  .ruleRow,
+  .supportRow {
     grid-template-columns: 1fr;
   }
 
@@ -1335,7 +1446,8 @@ textarea {
   .statGrid.compact,
   .statInputGrid,
   .legitimacyLedger,
-  .moodEditor {
+  .moodEditor,
+  .supportEditor {
     grid-template-columns: 1fr;
   }
 
