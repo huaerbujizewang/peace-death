@@ -29,6 +29,7 @@ player2@peace.local
 player3@peace.local
 player4@peace.local
 player5@peace.local
+observe@peace.local
 ```
 
 3. 再运行 `supabase/seed.sql`。它会初始化国家状态、政策、派系、职位、群体情绪、境外势力耐心，并把汉娜公爵作为 DM 持有的教材角色写入。
