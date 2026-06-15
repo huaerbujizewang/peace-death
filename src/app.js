@@ -474,7 +474,7 @@ async function loadAll() {
   const [gameState, characters, privateStats, retainers, retainerPrivate, assignments, actions, factions, groups, policies, foreignPowers, votes, positions, profiles, privateActionResults] = queries;
   let presenceRows = [];
   let auditRows = [];
-  if (profile.data?.role === "dm") {
+  if (canObserve()) {
     const [presence, audits] = await Promise.all([
       supabase.from("player_presence").select("*").order("last_seen_at", { ascending: false }),
       supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(120),
@@ -639,6 +639,18 @@ function tabLabel(key) {
     parliament: "国会",
     dm: "DM",
   }[key] ?? key;
+}
+
+function isDm() {
+  return state.profile?.role === "dm";
+}
+
+function isPlayer() {
+  return state.profile?.role === "player";
+}
+
+function canObserve() {
+  return ["dm", "observer"].includes(state.profile?.role);
 }
 
 function phaseStrip() {
@@ -964,12 +976,12 @@ function policyEffectText(policyKey, optionKey) {
 }
 
 function characterPanel() {
-  const isDm = state.profile.role === "dm";
+  const dm = isDm();
   const characters = state.data.characters;
   const statsByCharacter = new Map(state.data.privateStats.map((s) => [s.character_id, s]));
   const assignmentNames = assignmentMap();
   const ownCharacterCount = state.data.characters.filter((c) => c.owner_id === state.profile.id && c.active !== false).length;
-  const canCreate = isDm || ownCharacterCount === 0;
+  const canCreate = dm || (isPlayer() && ownCharacterCount === 0);
   return `
     <section class="panel wide">
       <div class="panelHeader">
@@ -979,7 +991,7 @@ function characterPanel() {
         </div>
         <span class="scorePill">亲信数 = (魅力 + 威望) / 50 向下取整</span>
       </div>
-      ${canCreate ? characterCreateForm() : `<div class="notice">每个玩家账号只能创建一张角色卡；需要重车请先删除旧卡，或找 DM 处理。</div>`}
+      ${canCreate ? characterCreateForm() : `<div class="notice">${canObserve() && !dm ? "OB账号只能旁观角色卡，不能创建或修改。" : "每个玩家账号只能创建一张角色卡；需要重车请先删除旧卡，或找 DM 处理。"}</div>`}
     </section>
     <div class="grid two characterList">
       ${characters.map((character) => {
@@ -1012,7 +1024,7 @@ function characterPanel() {
                 </div>
               `).join("")}
             </div>
-            ${isDm ? dmCharacterEditor(character, stats) : ""}
+            ${dm ? dmCharacterEditor(character, stats) : ""}
           </section>
         `;
       }).join("")}
@@ -1152,6 +1164,7 @@ function traitCheckbox(group, name, cost, req) {
 }
 
 function actionPanel() {
+  const readonly = !isPlayer() && !isDm();
   const ownCharacters = state.data.characters.filter((c) => c.owner_id === state.profile.id);
   const ownIds = new Set(ownCharacters.map((c) => c.id));
   const retainers = state.data.retainers.filter((r) => ownIds.has(r.character_id));
@@ -1163,29 +1176,36 @@ function actionPanel() {
   const hasYouth = ownCharacters.some((c) => c.public_traits?.includes("年轻气盛")) || ownStats.some((s) => s.secret_traits?.includes("年轻气盛"));
   return `
     <div class="grid two">
-      <section class="panel">
-        <div class="panelHeader"><h2>行动草稿</h2><span class="scorePill">草稿不限阶段</span></div>
-        <div class="notice">正式提交只在对应阶段开放；政府行动不公开必须填写理由，理由不合理由DM扣威望。</div>
-        <form id="action-form">
-          <label>行动类型<select name="action_kind"><option value="private">私人行动</option><option value="government">政府行动</option></select></label>
-          <label>执行者<select name="actor">${actors.map(([type, id, name]) => `<option value="${type}:${id}">${escapeHtml(name)}</option>`).join("")}</select></label>
-          <label>标题<input name="title"></label>
-          <div class="formRow">
-            <label>分类<select name="category">${["外交", "情报", "经济", "宣传", "军事", "司法", "结党", "调查", "改革", "其他"].map((x) => `<option>${x}</option>`).join("")}</select></label>
-            <label>目标<input name="target"></label>
-          </div>
-          <label>描述<textarea name="description"></textarea></label>
-          <label>使用资源 / 特质 / 备注<textarea name="resources"></textarea></label>
-          <div class="toggleRow">
-            <label><input name="public_government" type="checkbox"> 政府行动公开完整内容</label>
-          </div>
-          <label>不公开理由<input name="non_public_reason"></label>
-          <div class="buttonRow">
-            <button class="ghostButton" type="button" data-action-save="draft">保存草稿</button>
-            <button class="primaryButton" type="button" data-action-save="submitted">提交</button>
-          </div>
-        </form>
-      </section>
+      ${readonly ? `
+        <section class="panel">
+          <div class="panelHeader"><h2>旁观模式</h2><span class="scorePill">只读</span></div>
+          <div class="notice">OB账号可以查看所有玩家行动和结果，但不能提交、批准、处理或删除任何内容。</div>
+        </section>
+      ` : `
+        <section class="panel">
+          <div class="panelHeader"><h2>行动草稿</h2><span class="scorePill">草稿不限阶段</span></div>
+          <div class="notice">正式提交只在对应阶段开放；政府行动不公开必须填写理由，理由不合理由DM扣威望。</div>
+          <form id="action-form">
+            <label>行动类型<select name="action_kind"><option value="private">私人行动</option><option value="government">政府行动</option></select></label>
+            <label>执行者<select name="actor">${actors.map(([type, id, name]) => `<option value="${type}:${id}">${escapeHtml(name)}</option>`).join("")}</select></label>
+            <label>标题<input name="title"></label>
+            <div class="formRow">
+              <label>分类<select name="category">${["外交", "情报", "经济", "宣传", "军事", "司法", "结党", "调查", "改革", "其他"].map((x) => `<option>${x}</option>`).join("")}</select></label>
+              <label>目标<input name="target"></label>
+            </div>
+            <label>描述<textarea name="description"></textarea></label>
+            <label>使用资源 / 特质 / 备注<textarea name="resources"></textarea></label>
+            <div class="toggleRow">
+              <label><input name="public_government" type="checkbox"> 政府行动公开完整内容</label>
+            </div>
+            <label>不公开理由<input name="non_public_reason"></label>
+            <div class="buttonRow">
+              <button class="ghostButton" type="button" data-action-save="draft">保存草稿</button>
+              <button class="primaryButton" type="button" data-action-save="submitted">提交</button>
+            </div>
+          </form>
+        </section>
+      `}
       <section class="panel">
         <div class="panelHeader"><h2>行动记录</h2><div class="quota">私人 ${hasYouth ? 3 : 2} / 政府 ${hasYouth ? 2 : 1}</div></div>
         <div class="actionStack">${state.data.actions.map(actionCard).join("")}</div>
@@ -1195,7 +1215,7 @@ function actionPanel() {
 }
 
 function governmentPanel() {
-  const canApprove = isGovernmentHead();
+  const canApprove = isPlayer() && isGovernmentHead();
   const approvals = state.data.actions.filter((a) => a.status === "needs_approval");
   return `
     <div class="grid two">
@@ -1708,6 +1728,7 @@ function setMeter(id, text, ok) {
 }
 
 async function saveAction(mode) {
+  if (!isPlayer() && !isDm()) return;
   const form = document.getElementById("action-form");
   if (!form) return;
   const data = new FormData(form);
@@ -1754,6 +1775,7 @@ async function saveAction(mode) {
 }
 
 async function createCharacter() {
+  if (!isPlayer() && !isDm()) return;
   const form = document.getElementById("character-form");
   if (!form) return;
   const data = new FormData(form);
@@ -2435,16 +2457,17 @@ function tagBlock(title, items = []) {
 }
 
 function actionCard(action) {
-  const canSeePrivate = state.profile.role === "dm" || action.owner_id === state.profile.id;
+  const canSeePrivate = canObserve() || action.owner_id === state.profile.id;
+  const privateLabel = canObserve() ? "私密结果（DM/OB可见）" : "私密结果（仅DM和本人可见）";
   return `
     <article class="actionCard">
       <div class="actionHeader">
         <div><strong>${escapeHtml(action.title || "未命名行动")}</strong><span>${statusLabel(action.status)} · 第${action.turn_number}回合 · ${action.action_kind === "government" ? (action.visibility === "public" ? "公开政府行动" : "不公开政府行动") : "私人行动"}</span></div>
-        ${state.profile.role === "dm" ? `<button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>` : ""}
+        ${isDm() ? `<button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>` : ""}
       </div>
       <p>${escapeHtml(action.description)}</p>
       ${action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
-      ${canSeePrivate && action.result_private ? `<div class="resultBox private"><strong>私密结果（仅DM和本人可见）</strong><span>${escapeHtml(action.result_private)}</span></div>` : ""}
+      ${canSeePrivate && action.result_private ? `<div class="resultBox private"><strong>${privateLabel}</strong><span>${escapeHtml(action.result_private)}</span></div>` : ""}
     </article>
   `;
 }
@@ -2689,11 +2712,11 @@ function scandalLabels(scandals) {
 }
 
 function canDeleteCharacter(character) {
-  return state.profile.role === "dm" || character.owner_id === state.profile.id;
+  return isDm() || (isPlayer() && character.owner_id === state.profile.id);
 }
 
 function defaultCharacterOwnerId() {
-  if (state.profile.role !== "dm") return state.profile.id;
+  if (!isDm()) return state.profile.id;
   const player1 = state.data.profiles?.find((profile) => profile.display_name === "player1" && canOwnerCreateCharacter(profile.id));
   return player1?.id ?? state.profile.id;
 }
