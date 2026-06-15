@@ -532,7 +532,7 @@ function renderLogin() {
     <form class="loginPanel" id="login-form">
       <p class="eyebrow">Peace Death</p>
       <h1>登录角色</h1>
-      <label>邮箱<input name="email" placeholder="hanna@peace.local" autocomplete="username"></label>
+      <label>邮箱<input name="email" placeholder="player1@peace.local" autocomplete="username"></label>
       <label>密码<input name="password" type="password" autocomplete="current-password"></label>
       ${state.error ? `<div class="errorBox">${escapeHtml(state.error)}</div>` : ""}
       <button class="primaryButton">进入</button>
@@ -882,7 +882,7 @@ function policyEffectText(policyKey, optionKey) {
 
 function characterPanel() {
   const isDm = state.profile.role === "dm";
-  const characters = isDm ? state.data.characters : state.data.characters.filter((c) => c.owner_id === state.profile.id);
+  const characters = state.data.characters;
   const statsByCharacter = new Map(state.data.privateStats.map((s) => [s.character_id, s]));
   const assignmentNames = assignmentMap();
   const ownCharacterCount = state.data.characters.filter((c) => c.owner_id === state.profile.id && c.active !== false).length;
@@ -914,9 +914,10 @@ function characterPanel() {
                 ${canDeleteCharacter(character) ? `<button class="dangerButton" data-delete-character="${character.id}" data-character-name="${escapeAttr(character.name)}" type="button">删除</button>` : ""}
               </div>
             </div>
+            <h3>公开信息</h3>
             <p class="story">${escapeHtml(character.public_background || "暂无公开背景。")}</p>
             ${tagBlock("公开特质", character.public_traits)}
-            ${stats ? statGrid(stats) + tagBlock("秘密特质", stats.secret_traits) + tagBlock("人生追求", [stats.pursuit].filter(Boolean)) + tagBlock("黑料", scandalLabels(stats.scandals)) : ""}
+            ${stats ? `<h3>私密信息</h3>${statGrid(stats)}${tagBlock("秘密特质", stats.secret_traits)}${tagBlock("人生追求", [stats.pursuit].filter(Boolean))}${tagBlock("黑料", scandalLabels(stats.scandals))}` : ""}
             <h3>亲信</h3>
             <div class="retainerGrid">
               ${retainers.map((retainer) => `
@@ -937,10 +938,13 @@ function characterPanel() {
 }
 
 function characterCreateForm() {
+  const selectedOwnerId = defaultCharacterOwnerId();
+  const defaultFactionId = defaultCharacterFactionId(selectedOwnerId);
+  const factionOptions = characterCreateFactionOptions(defaultFactionId);
   const playerOptions = state.profile.role === "dm"
     ? state.data.profiles?.map((p) => {
         const blocked = !canOwnerCreateCharacter(p.id);
-        return `<option value="${p.id}" ${p.id === state.profile.id ? "selected" : ""} ${blocked ? "disabled" : ""}>${escapeHtml(p.display_name)}${blocked ? "（已有角色）" : ""}</option>`;
+        return `<option value="${p.id}" ${p.id === selectedOwnerId ? "selected" : ""} ${blocked ? "disabled" : ""}>${escapeHtml(p.display_name)}${blocked ? "（已有角色）" : ""}</option>`;
       }).join("") ?? ""
     : "";
   return `
@@ -954,7 +958,7 @@ function characterCreateForm() {
       <div class="formRow">
         <label>民族<select name="ethnicity"><option>约尔裔</option><option>卡兰克裔</option><option>其他少数民族</option></select></label>
         <label>信仰<select name="faith"><option>圣会派</option><option>瓦勒派</option><option>无神论</option></select></label>
-        <label>政治派系<select name="faction_id">${state.data.factions.filter((f) => f.faction_type === "political" && f.key !== "unaligned").map((f) => `<option value="${f.id}">${escapeHtml(f.short_name)}</option>`).join("")}</select></label>
+        <label>政治派系<select name="faction_id">${factionOptions}</select></label>
       </div>
       <h3>属性</h3>
       <div class="sheetMeters">
@@ -1061,7 +1065,7 @@ function statInput(name, label, value, min, max, step = 1) {
 
 function traitCheckbox(group, name, cost, req) {
   const reqText = req ? ` · ${traitRequirementLabel(req)}` : "";
-  return `<label class="checkLine"><input type="checkbox" name="${group}" value="${escapeAttr(name)}" data-cost="${cost}" data-req="${escapeAttr(req)}"> ${escapeHtml(name)}（${cost >= 0 ? cost : "+" + Math.abs(cost)}点${reqText}）</label>`;
+  return `<label class="checkLine"><input type="checkbox" name="${group}" value="${escapeAttr(name)}" data-cost="${cost}" data-req="${escapeAttr(req)}"> ${escapeHtml(name)}（<span data-trait-cost-label>${traitCostLabel(cost)}</span>${reqText}）</label>`;
 }
 
 function actionPanel() {
@@ -1435,6 +1439,12 @@ function setupCharacterSheetAssistant() {
   const form = document.getElementById("character-form");
   if (!form) return;
   const update = () => updateCharacterSheetAssistant(form);
+  const ownerInput = form.querySelector('[name="owner_id"]');
+  ownerInput?.addEventListener("change", () => {
+    const factionId = defaultCharacterFactionId(String(ownerInput.value));
+    if (factionId) form.elements.faction_id.value = factionId;
+    update();
+  });
   form.addEventListener("input", update);
   form.addEventListener("change", update);
   update();
@@ -1462,6 +1472,8 @@ function updateCharacterSheetAssistant(form) {
     会计: numberField(data, "skill_会计"),
   };
   const factionId = String(data.get("faction_id") ?? "");
+  const ownerId = state.profile.role === "dm" ? String(data.get("owner_id") ?? "") : state.profile.id;
+  refreshTraitCostLabels(form, factionId, ownerId);
   const coreSum = ["body", "willpower", "wealth", "charm", "intellect", "perception"].reduce((total, key) => total + Number(attributes[key] ?? 0), 0);
   setMeter("attribute-meter", `属性点：${coreSum} / 400，剩余 ${400 - coreSum}`, coreSum === 400);
 
@@ -1476,7 +1488,7 @@ function updateCharacterSheetAssistant(form) {
   const skillBudget = Number(attributes.intellect) * 2;
   setMeter("skill-meter", `技能点：已用 ${skillSpent} / ${skillBudget}，剩余 ${skillBudget - skillSpent}`, skillSpent === skillBudget);
 
-  const traitSpent = traitCost(publicTraits, secretTraits, factionId);
+  const traitSpent = traitCost(publicTraits, secretTraits, factionId, ownerId);
   const traitOk = traitSpent <= 4 && !(publicTraits.includes("资本家") && publicTraits.includes("苦行僧"));
   setMeter("trait-meter", `特质点：已用 ${traitSpent} / 4，剩余 ${4 - traitSpent}`, traitOk);
 
@@ -1567,7 +1579,7 @@ async function createCharacter() {
     public_background: String(data.get("public_background") ?? "").trim(),
   };
   const retainers = parseRetainers(String(data.get("retainers") ?? ""));
-  const errors = override ? [] : validateCharacterDraft(characterDraft, attributes, publicTraits, secretTraits, pursuit, retainers);
+  const errors = override ? [] : validateCharacterDraft(characterDraft, attributes, publicTraits, secretTraits, pursuit, retainers, ownerId);
   if (errors.length) {
     alert(errors.join("\n"));
     return;
@@ -1681,14 +1693,14 @@ async function deleteAction(actionId, actionTitle) {
   else await loadAll();
 }
 
-function validateCharacterDraft(character, attributes, publicTraits, secretTraits, pursuit, retainers) {
+function validateCharacterDraft(character, attributes, publicTraits, secretTraits, pursuit, retainers, ownerId) {
   const errors = [];
   if (!character.name) errors.push("姓名不能为空。");
   if (!["男", "女", "其他"].includes(character.gender)) errors.push("性别只能选择男、女或其他。");
   if (!pursuit || !PURSUITS.includes(pursuit)) errors.push("必须选择一个人生追求。");
   const attributeErrors = validateAttributes(character, attributes, publicTraits);
   errors.push(...attributeErrors);
-  const cost = traitCost(publicTraits, secretTraits, character.faction_id);
+  const cost = traitCost(publicTraits, secretTraits, character.faction_id, ownerId);
   if (cost > 4) errors.push(`特质点超支：当前 ${cost} 点，最多 4 点。`);
   if (publicTraits.includes("资本家") && publicTraits.includes("苦行僧")) {
     errors.push("资本家和苦行僧的财富范围冲突，不能同时选择。");
@@ -1749,14 +1761,36 @@ function inRange(value, min, max) {
   return Number.isFinite(number) && number >= min && number <= max;
 }
 
-function traitCost(publicTraits, secretTraits, factionId) {
+function traitCost(publicTraits, secretTraits, factionId, ownerId = "") {
   let total = 0;
   for (const trait of publicTraits) total += PUBLIC_TRAITS.find(([name]) => name === trait)?.[1] ?? 0;
   for (const trait of secretTraits) {
-    if (trait === "工会联系" && factionKey(factionId) !== "social_democrats") total += 2;
-    else total += SECRET_TRAITS.find(([name]) => name === trait)?.[1] ?? 0;
+    const baseCost = SECRET_TRAITS.find(([name]) => name === trait)?.[1] ?? 0;
+    total += effectiveTraitCost(trait, baseCost, factionId, ownerId);
   }
   return total;
+}
+
+function effectiveTraitCost(trait, baseCost, factionId, ownerId = "") {
+  if (trait === "工会联系" && !hasUnionContactDiscount(factionId, ownerId)) return 2;
+  return baseCost;
+}
+
+function hasUnionContactDiscount(factionId, ownerId = "") {
+  return factionKey(factionId) === "social_democrats" || profileDisplayName(ownerId) === "player1";
+}
+
+function traitCostLabel(cost) {
+  return `${cost >= 0 ? cost : "+" + Math.abs(cost)}点`;
+}
+
+function refreshTraitCostLabels(form, factionId, ownerId = "") {
+  form.querySelectorAll("[data-trait-cost-label]").forEach((label) => {
+    const checkbox = label.closest("label")?.querySelector("input[type='checkbox']");
+    if (!checkbox) return;
+    const baseCost = Number(checkbox.dataset.cost ?? 0);
+    label.textContent = traitCostLabel(effectiveTraitCost(checkbox.value, baseCost, factionId, ownerId));
+  });
 }
 
 function meetsRequirement(req, character, attributes) {
@@ -2387,6 +2421,30 @@ function scandalLabels(scandals) {
 
 function canDeleteCharacter(character) {
   return state.profile.role === "dm" || character.owner_id === state.profile.id;
+}
+
+function defaultCharacterOwnerId() {
+  if (state.profile.role !== "dm") return state.profile.id;
+  const player1 = state.data.profiles?.find((profile) => profile.display_name === "player1" && canOwnerCreateCharacter(profile.id));
+  return player1?.id ?? state.profile.id;
+}
+
+function defaultCharacterFactionId(ownerId) {
+  const preferredKey = profileDisplayName(ownerId) === "player1" ? "social_democrats" : "";
+  const preferred = state.data.factions.find((faction) => faction.key === preferredKey);
+  return preferred?.id ?? state.data.factions.find((faction) => faction.faction_type === "political" && faction.key !== "unaligned")?.id ?? "";
+}
+
+function characterCreateFactionOptions(selectedFactionId) {
+  return state.data.factions
+    .filter((faction) => faction.faction_type === "political" && faction.key !== "unaligned")
+    .map((faction) => `<option value="${faction.id}" ${faction.id === selectedFactionId ? "selected" : ""}>${escapeHtml(faction.short_name)}</option>`)
+    .join("");
+}
+
+function profileDisplayName(ownerId) {
+  if (ownerId === state.profile.id) return state.profile.display_name;
+  return state.data.profiles?.find((profile) => profile.id === ownerId)?.display_name ?? "";
 }
 
 function factionKey(id) {
