@@ -334,6 +334,7 @@ const SCANDALS = [
 
 let supabase = null;
 let autoRefreshTimer = null;
+let presenceTimer = null;
 let state = {
   session: null,
   profile: null,
@@ -344,7 +345,17 @@ let state = {
 };
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && state.session) loadAll();
+  if (!state.session) return;
+  if (document.visibilityState === "visible") {
+    touchPresence(true);
+    loadAll();
+  } else {
+    touchPresence(false);
+  }
+});
+
+window.addEventListener("pagehide", () => {
+  if (state.session) touchPresence(false);
 });
 
 boot();
@@ -387,12 +398,20 @@ function startAutoRefresh() {
   autoRefreshTimer = window.setInterval(() => {
     if (state.session && document.visibilityState === "visible") loadAll();
   }, 20000);
+  presenceTimer = window.setInterval(() => {
+    if (state.session && document.visibilityState === "visible") touchPresence(true);
+  }, 15000);
 }
 
 function stopAutoRefresh() {
-  if (!autoRefreshTimer) return;
-  window.clearInterval(autoRefreshTimer);
-  autoRefreshTimer = null;
+  if (autoRefreshTimer) {
+    window.clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+  if (presenceTimer) {
+    window.clearInterval(presenceTimer);
+    presenceTimer = null;
+  }
 }
 
 function emptyData() {
@@ -411,6 +430,8 @@ function emptyData() {
     votes: [],
     positions: [],
     profiles: [],
+    presence: [],
+    audits: [],
   };
 }
 
@@ -423,6 +444,7 @@ async function loadAll() {
     return;
   }
   state.profile = profile.data;
+  touchPresence(true);
   const actionColumns = "id, owner_id, turn_number, action_kind, actor_type, actor_id, title, category, target, description, resources, visibility, non_public_reason, requires_approval, status, approved_by, result_public, processed_at, created_at, updated_at";
   const allowedPrivateActionResults = supabase.rpc("visible_action_private_results");
 
@@ -450,6 +472,21 @@ async function loadAll() {
     return;
   }
   const [gameState, characters, privateStats, retainers, retainerPrivate, assignments, actions, factions, groups, policies, foreignPowers, votes, positions, profiles, privateActionResults] = queries;
+  let presenceRows = [];
+  let auditRows = [];
+  if (profile.data?.role === "dm") {
+    const [presence, audits] = await Promise.all([
+      supabase.from("player_presence").select("*").order("last_seen_at", { ascending: false }),
+      supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(120),
+    ]);
+    if (presence.error || audits.error) {
+      state.error = presence.error?.message ?? audits.error?.message;
+      render();
+      return;
+    }
+    presenceRows = presence.data ?? [];
+    auditRows = audits.data ?? [];
+  }
   const privateResultsByAction = new Map((privateActionResults.data ?? []).map((item) => [item.action_id, item.result_private]));
   const visibleActions = (actions.data ?? []).map((action) => ({ ...action, result_private: privateResultsByAction.get(action.id) ?? "" }));
   state.data = {
@@ -467,6 +504,8 @@ async function loadAll() {
     votes: votes.data ?? [],
     positions: positions.data ?? [],
     profiles: profiles.data ?? [],
+    presence: presenceRows,
+    audits: auditRows,
   };
   render();
 }
@@ -541,13 +580,45 @@ function renderLogin() {
   document.getElementById("login-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: form.get("email"),
       password: form.get("password"),
     });
     state.error = error?.message ?? "";
+    if (!error) {
+      state.session = data.session;
+      await touchPresence(true);
+      await recordActivity("login", "auth");
+    }
     render();
   });
+}
+
+async function touchPresence(online) {
+  if (!supabase || !state.session) return;
+  try {
+    await supabase.rpc("touch_presence", {
+      presence_online: Boolean(online),
+      presence_tab: tabLabel(state.tab),
+      presence_user_agent: window.navigator.userAgent,
+    });
+  } catch (error) {
+    console.warn("presence update failed", error);
+  }
+}
+
+async function recordActivity(action, tableName = "app", rowId = null, details = {}) {
+  if (!supabase || !state.session) return;
+  try {
+    await supabase.rpc("log_activity", {
+      activity_action: action,
+      activity_table: tableName,
+      activity_row_id: rowId,
+      activity_details: details,
+    });
+  } catch (error) {
+    console.warn("activity log failed", error);
+  }
 }
 
 function shell(content) {
@@ -556,6 +627,18 @@ function shell(content) {
 
 function tabButton(key, label) {
   return `<button class="tab ${state.tab === key ? "active" : ""}" data-tab="${key}">${label}</button>`;
+}
+
+function tabLabel(key) {
+  return {
+    overview: "总览",
+    character: "角色",
+    people: "人物",
+    actions: "行动",
+    government: "政府",
+    parliament: "国会",
+    dm: "DM",
+  }[key] ?? key;
 }
 
 function phaseStrip() {
@@ -1290,6 +1373,7 @@ function voteClassLabel(value) {
 function dmPanel() {
   return `
     <div class="grid two">
+      ${dmPlayerMonitor()}
       <section class="panel">
         <h2>阶段与国家修正</h2>
         <div class="buttonRow">
@@ -1360,15 +1444,124 @@ function dmPanel() {
   `;
 }
 
+function dmPlayerMonitor() {
+  const presenceByProfile = new Map(state.data.presence.map((row) => [row.profile_id, row]));
+  const players = state.data.profiles.filter((profile) => profile.role === "player");
+  const audits = state.data.audits.slice(0, 80);
+  return `
+    <section class="panel wide">
+      <div class="panelHeader">
+        <div>
+          <h2>玩家观测</h2>
+          <p>在线状态按最近心跳判断；关闭页面时可能最多延迟几十秒。</p>
+        </div>
+        <span class="scorePill">${players.filter((profile) => isProfileOnline(presenceByProfile.get(profile.id))).length} / ${players.length} 在线</span>
+      </div>
+      <div class="monitorGrid">
+        <div class="playerPresenceList">
+          ${players.map((profile) => {
+            const presence = presenceByProfile.get(profile.id);
+            const online = isProfileOnline(presence);
+            return `
+              <article class="presenceCard ${online ? "online" : ""}">
+                <div>
+                  <strong>${escapeHtml(profile.display_name)}</strong>
+                  <span>${online ? "在线" : "离线"}</span>
+                </div>
+                <small>最后心跳：${formatDateTime(presence?.last_seen_at)}</small>
+                <small>上线：${formatDateTime(presence?.last_online_at)}</small>
+                <small>下线：${formatDateTime(presence?.last_offline_at)}</small>
+                <small>当前页面：${escapeHtml(presence?.current_tab || "未知")}</small>
+              </article>
+            `;
+          }).join("") || `<div class="notice">还没有玩家账号。</div>`}
+        </div>
+        <div class="activityFeed">
+          ${audits.map((entry) => `
+            <article class="activityItem">
+              <time>${formatDateTime(entry.created_at)}</time>
+              <strong>${escapeHtml(profileDisplayName(entry.actor_id) || "未知账号")}</strong>
+              <span>${escapeHtml(activityLabel(entry.action))}</span>
+              <small>${escapeHtml(activityDetailText(entry))}</small>
+            </article>
+          `).join("") || `<div class="notice">还没有活动记录。</div>`}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function isProfileOnline(presence) {
+  if (!presence?.online || !presence.last_seen_at) return false;
+  return Date.now() - new Date(presence.last_seen_at).getTime() < 45000;
+}
+
+function formatDateTime(value) {
+  if (!value) return "无";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "无";
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function activityLabel(action) {
+  return {
+    login: "登录",
+    logout: "退出",
+    create_action: "创建行动",
+    delete_action: "删除行动",
+    process_action: "处理行动",
+    approve_action: "批准/驳回行动",
+    create_character: "创建角色卡",
+    update_character: "修改角色卡",
+    delete_character: "删除角色卡",
+    advance_phase: "推进阶段",
+    previous_phase: "回退阶段",
+    save_phase: "修改回合/阶段",
+    reset_turn: "重置回合",
+    save_state: "修改国家状态",
+    change_policy: "修改政策",
+    assign_position: "任命职位",
+    unassign_position: "撤任职位",
+    create_vote: "创建投票",
+    update_vote: "调整票向",
+    settle_vote: "结算投票",
+    delete_vote: "删除投票",
+    add_scandal: "添加黑料",
+  }[action] ?? action;
+}
+
+function activityDetailText(entry) {
+  const details = typeof entry.details === "object" && entry.details ? entry.details : {};
+  const parts = [
+    details.title,
+    details.name,
+    details.issue,
+    details.policy,
+    details.phase,
+    details.status,
+  ].filter(Boolean);
+  return parts.join(" · ") || entry.table_name || "";
+}
+
 function bindCommon() {
   root.querySelectorAll("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.tab = button.dataset.tab;
+      touchPresence(true);
       render();
     });
   });
   root.querySelector('[data-action="refresh"]')?.addEventListener("click", loadAll);
-  root.querySelector('[data-action="logout"]')?.addEventListener("click", () => supabase.auth.signOut());
+  root.querySelector('[data-action="logout"]')?.addEventListener("click", async () => {
+    await recordActivity("logout", "auth");
+    await touchPresence(false);
+    await supabase.auth.signOut();
+  });
   root.querySelectorAll("[data-country]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedCountry = button.dataset.country;
@@ -1403,8 +1596,16 @@ function bindTab() {
 
   root.querySelectorAll("[data-approve]").forEach((button) => {
     button.addEventListener("click", async () => {
-      await supabase.from("actions").update({ status: button.dataset.status, approved_by: state.profile.id }).eq("id", button.dataset.approve);
-      loadAll();
+      const action = state.data.actions.find((item) => item.id === button.dataset.approve);
+      const { error } = await supabase.from("actions").update({ status: button.dataset.status, approved_by: state.profile.id }).eq("id", button.dataset.approve);
+      if (error) alert(error.message);
+      else {
+        await recordActivity("approve_action", "actions", button.dataset.approve, {
+          title: action?.title ?? "",
+          status: statusLabel(button.dataset.status),
+        });
+        loadAll();
+      }
     });
   });
 
@@ -1542,7 +1743,14 @@ async function saveAction(mode) {
     status,
   });
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity("create_action", "actions", null, {
+      title: String(data.get("title") ?? ""),
+      status,
+      kind: actionKind,
+    });
+    loadAll();
+  }
 }
 
 async function createCharacter() {
@@ -1626,6 +1834,7 @@ async function createCharacter() {
       return;
     }
   }
+  await recordActivity("create_character", "characters_public", characterId, { name: characterDraft.name });
   await loadAll();
 }
 
@@ -1634,7 +1843,10 @@ async function deleteCharacter(characterId, characterName) {
   if (typed !== characterName) return;
   const { error } = await supabase.rpc("delete_character", { character_uuid: characterId });
   if (error) alert(error.message);
-  else await loadAll();
+  else {
+    await recordActivity("delete_character", "characters_public", characterId, { name: characterName });
+    await loadAll();
+  }
 }
 
 async function saveCharacterEdits(characterId) {
@@ -1682,6 +1894,7 @@ async function saveCharacterEdits(characterId) {
     }
   }
   alert("角色卡已保存。");
+  await recordActivity("update_character", "characters_public", characterId, { name: publicPatch.name });
   await loadAll();
 }
 
@@ -1690,7 +1903,10 @@ async function deleteAction(actionId, actionTitle) {
   if (!confirm(`确定删除行动“${actionTitle || "未命名行动"}”吗？`)) return;
   const { error } = await supabase.from("actions").delete().eq("id", actionId);
   if (error) alert(error.message);
-  else await loadAll();
+  else {
+    await recordActivity("delete_action", "actions", actionId, { title: actionTitle });
+    await loadAll();
+  }
 }
 
 function validateCharacterDraft(character, attributes, publicTraits, secretTraits, pursuit, retainers, ownerId) {
@@ -1887,7 +2103,13 @@ async function shiftPhase(direction) {
   if (direction < 0 && safeIndex === 0) patch.current_turn = Math.max(1, currentTurn - 1);
   const { error } = await supabase.from("game_state").update(patch).eq("id", true);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity(direction > 0 ? "advance_phase" : "previous_phase", "game_state", null, {
+      phase: phaseLabel(next),
+      turn: patch.current_turn ?? currentTurn,
+    });
+    loadAll();
+  }
 }
 
 async function savePhase() {
@@ -1895,14 +2117,20 @@ async function savePhase() {
   const phase = document.getElementById("dm-phase")?.value ?? "turn_start";
   const { error } = await supabase.from("game_state").update({ current_turn: turn, current_phase: phase }).eq("id", true);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity("save_phase", "game_state", null, { phase: phaseLabel(phase), turn });
+    loadAll();
+  }
 }
 
 async function resetTurn() {
   if (!confirm("确定要把回合重置为第1回合 / 回合开始吗？")) return;
   const { error } = await supabase.from("game_state").update({ current_turn: 1, current_phase: "turn_start" }).eq("id", true);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity("reset_turn", "game_state", null, { phase: phaseLabel("turn_start"), turn: 1 });
+    loadAll();
+  }
 }
 
 async function saveState() {
@@ -1923,7 +2151,14 @@ async function saveState() {
   const results = await Promise.all(moodUpdates);
   const moodError = results.find((result) => result.error)?.error;
   if (moodError) alert(moodError.message);
-  else loadAll();
+  else {
+    await recordActivity("save_state", "game_state", null, {
+      legitimacy_modifier: legitimacyModifier,
+      economy_status: economyStatus,
+      budget_status: budgetStatus,
+    });
+    loadAll();
+  }
 }
 
 async function savePolicyChange(policyKey) {
@@ -1947,7 +2182,14 @@ async function savePolicyChange(policyKey) {
   }
   const effectError = await applyPolicyConsequences(current, next);
   if (effectError) alert(effectError.message ?? String(effectError));
-  else loadAll();
+  else {
+    await recordActivity("change_policy", "current_policies", null, {
+      policy: policyLabel,
+      from: options[current] ?? current,
+      to: options[next] ?? next,
+    });
+    loadAll();
+  }
 }
 
 async function applyPolicyConsequences(previousOption, nextOption) {
@@ -2001,14 +2243,21 @@ async function assignPosition() {
   }
   const { error } = await supabase.from("position_assignments").insert({ entity_type: entityType, entity_id: entityId, position_id: positionId });
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    const position = state.data.positions.find((item) => item.id === positionId);
+    await recordActivity("assign_position", "position_assignments", null, { name: position?.name ?? "" });
+    loadAll();
+  }
 }
 
 async function unassignPosition(assignmentId, assignmentName) {
   if (!confirm(`确定撤任「${assignmentName}」吗？`)) return;
   const { error } = await supabase.from("position_assignments").delete().eq("id", assignmentId);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity("unassign_position", "position_assignments", assignmentId, { name: assignmentName });
+    loadAll();
+  }
 }
 
 async function createVote() {
@@ -2025,7 +2274,10 @@ async function createVote() {
   }));
   const { error } = await supabase.from("parliament_votes").insert(rows);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity("create_vote", "parliament_votes", null, { issue });
+    loadAll();
+  }
 }
 
 async function updateVote(id, field, currentValue) {
@@ -2041,7 +2293,10 @@ async function updateVote(id, field, currentValue) {
   if (Object.values(patch).some((value) => Number.isNaN(value))) return;
   const { error } = await supabase.from("parliament_votes").update(patch).eq("id", id);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity("update_vote", "parliament_votes", id, { issue: row.issue });
+    loadAll();
+  }
 }
 
 async function settleVote(idsText) {
@@ -2056,7 +2311,10 @@ async function settleVote(idsText) {
   if (summary === null) return;
   const { error } = await supabase.from("parliament_votes").update({ notes: summary.trim() || defaultSummary }).in("id", ids);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity("settle_vote", "parliament_votes", null, { issue, status: verdict });
+    loadAll();
+  }
 }
 
 async function deleteVote(idsText, issue) {
@@ -2065,7 +2323,10 @@ async function deleteVote(idsText, issue) {
   if (!confirm(`确定删除议案“${issue || "未命名议案"}”的整组投票吗？`)) return;
   const { error } = await supabase.from("parliament_votes").delete().in("id", ids);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity("delete_vote", "parliament_votes", null, { issue });
+    loadAll();
+  }
 }
 
 function voteIdsFromText(idsText) {
@@ -2103,7 +2364,10 @@ async function processAction(id) {
     .update({ status: "processed", result_public: resultPublic, result_private: resultPrivate, processed_at: new Date().toISOString() })
     .eq("id", id);
   if (error) alert(error.message);
-  else loadAll();
+  else {
+    await recordActivity("process_action", "actions", id, { title: action?.title ?? "" });
+    loadAll();
+  }
 }
 
 async function addRandomScandal() {
@@ -2146,6 +2410,11 @@ async function addScandalToSelected(item) {
   if (error) alert(error.message);
   else {
     const character = state.data.characters.find((item) => item.id === characterId);
+    await recordActivity("add_scandal", "character_private", characterId, {
+      name: character?.name ?? "",
+      title: item[1],
+      severity: item[0],
+    });
     alert(`已给${character?.name ?? "该角色"}添加黑料：${item[0]}：${item[1]}`);
     loadAll();
   }

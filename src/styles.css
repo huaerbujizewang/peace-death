@@ -473,6 +473,81 @@ h3 {
   gap: 10px;
 }
 
+.monitorGrid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 14px;
+}
+
+.playerPresenceList,
+.activityFeed {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.presenceCard,
+.activityItem {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid #ded8cd;
+  border-radius: 6px;
+  background: #fbfaf7;
+}
+
+.presenceCard {
+  border-left: 4px solid #9aa1a8;
+}
+
+.presenceCard.online {
+  border-left-color: #2f8c58;
+  background: #f4fbf6;
+}
+
+.presenceCard div,
+.activityItem {
+  min-width: 0;
+}
+
+.presenceCard div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.presenceCard span {
+  font-size: 13px;
+  font-weight: 800;
+  color: #5c6470;
+}
+
+.presenceCard.online span {
+  color: #1f6b45;
+}
+
+.presenceCard small,
+.activityItem small,
+.activityItem time {
+  color: #69727c;
+  font-size: 12px;
+}
+
+.activityFeed {
+  max-height: 460px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.activityItem {
+  grid-template-columns: 82px minmax(72px, 0.8fr) minmax(90px, 1fr);
+  align-items: start;
+}
+
+.activityItem small {
+  grid-column: 2 / -1;
+}
+
 .policyRow,
 .factionRow,
 .positionRow,
@@ -1160,6 +1235,15 @@ textarea {
 
   .peopleGrid {
     grid-template-columns: 1fr;
+  }
+
+  .monitorGrid,
+  .activityItem {
+    grid-template-columns: 1fr;
+  }
+
+  .activityItem small {
+    grid-column: 1;
   }
 
   .intelPanel {
