@@ -335,6 +335,7 @@ const SCANDALS = [
 let supabase = null;
 let autoRefreshTimer = null;
 let presenceTimer = null;
+let presenceClientId = "";
 let state = {
   session: null,
   profile: null,
@@ -601,10 +602,23 @@ async function touchPresence(online) {
       presence_online: Boolean(online),
       presence_tab: tabLabel(state.tab),
       presence_user_agent: window.navigator.userAgent,
+      presence_client_id: getPresenceClientId(),
     });
   } catch (error) {
     console.warn("presence update failed", error);
   }
+}
+
+function getPresenceClientId() {
+  if (!isObserver()) return "primary";
+  if (presenceClientId) return presenceClientId;
+  const key = "peace_death_observer_client_id";
+  presenceClientId = window.localStorage.getItem(key) || "";
+  if (!presenceClientId) {
+    presenceClientId = window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage.setItem(key, presenceClientId);
+  }
+  return presenceClientId;
 }
 
 async function recordActivity(action, tableName = "app", rowId = null, details = {}) {
@@ -647,6 +661,10 @@ function isDm() {
 
 function isPlayer() {
   return state.profile?.role === "player";
+}
+
+function isObserver() {
+  return state.profile?.role === "observer";
 }
 
 function canObserve() {
@@ -1465,8 +1483,10 @@ function dmPanel() {
 }
 
 function dmPlayerMonitor() {
-  const presenceByProfile = new Map(state.data.presence.map((row) => [row.profile_id, row]));
+  const presenceByProfile = latestPresenceByProfile();
   const players = state.data.profiles.filter((profile) => profile.role === "player");
+  const observerProfiles = new Set(state.data.profiles.filter((profile) => profile.role === "observer").map((profile) => profile.id));
+  const observerSessions = state.data.presence.filter((row) => observerProfiles.has(row.profile_id));
   const audits = state.data.audits.slice(0, 80);
   return `
     <section class="panel wide">
@@ -1495,6 +1515,24 @@ function dmPlayerMonitor() {
               </article>
             `;
           }).join("") || `<div class="notice">还没有玩家账号。</div>`}
+          ${observerSessions.length ? `
+            <h3>OB会话</h3>
+            ${observerSessions.map((presence, index) => {
+              const online = isProfileOnline(presence);
+              return `
+                <article class="presenceCard ${online ? "online" : ""}">
+                  <div>
+                    <strong>OB ${index + 1}</strong>
+                    <span>${online ? "在线" : "离线"}</span>
+                  </div>
+                  <small>最后心跳：${formatDateTime(presence.last_seen_at)}</small>
+                  <small>上线：${formatDateTime(presence.last_online_at)}</small>
+                  <small>下线：${formatDateTime(presence.last_offline_at)}</small>
+                  <small>当前页面：${escapeHtml(presence.current_tab || "未知")}</small>
+                </article>
+              `;
+            }).join("")}
+          ` : ""}
         </div>
         <div class="activityFeed">
           ${audits.map((entry) => `
@@ -1509,6 +1547,15 @@ function dmPlayerMonitor() {
       </div>
     </section>
   `;
+}
+
+function latestPresenceByProfile() {
+  const rows = state.data.presence.slice().sort((a, b) => new Date(b.last_seen_at ?? 0) - new Date(a.last_seen_at ?? 0));
+  const map = new Map();
+  for (const row of rows) {
+    if (!map.has(row.profile_id)) map.set(row.profile_id, row);
+  }
+  return map;
 }
 
 function isProfileOnline(presence) {
