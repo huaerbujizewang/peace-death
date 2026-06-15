@@ -539,6 +539,8 @@ function render() {
   }
 
   const isDm = state.profile.role === "dm";
+  const observer = isObserver();
+  if (observer && ["character", "people"].includes(state.tab)) state.tab = "actions";
   root.innerHTML = shell(`
     <header class="topbar">
       <div>
@@ -554,8 +556,8 @@ function render() {
     ${state.error ? `<div class="errorBox">${escapeHtml(state.error)}</div>` : ""}
     <nav class="tabs">
       ${tabButton("overview", "总览")}
-      ${tabButton("character", "角色")}
-      ${tabButton("people", "人物")}
+      ${observer ? "" : tabButton("character", "角色")}
+      ${observer ? "" : tabButton("people", "人物")}
       ${tabButton("actions", "行动")}
       ${tabButton("government", "政府")}
       ${tabButton("parliament", "国会")}
@@ -1192,15 +1194,17 @@ function actionPanel() {
   ];
   const ownStats = state.data.privateStats.filter((s) => ownIds.has(s.character_id));
   const hasYouth = ownCharacters.some((c) => c.public_traits?.includes("年轻气盛")) || ownStats.some((s) => s.secret_traits?.includes("年轻气盛"));
+  if (readonly) {
+    return `
+      <section class="panel wide">
+        <div class="panelHeader"><h2>行动记录</h2><div class="quota">OB只读</div></div>
+        <div class="actionStack">${state.data.actions.map(actionCard).join("")}</div>
+      </section>
+    `;
+  }
   return `
     <div class="grid two">
-      ${readonly ? `
-        <section class="panel">
-          <div class="panelHeader"><h2>旁观模式</h2><span class="scorePill">只读</span></div>
-          <div class="notice">OB账号可以查看所有玩家行动和结果，但不能提交、批准、处理或删除任何内容。</div>
-        </section>
-      ` : `
-        <section class="panel">
+      <section class="panel">
           <div class="panelHeader"><h2>行动草稿</h2><span class="scorePill">草稿不限阶段</span></div>
           <div class="notice">正式提交只在对应阶段开放；政府行动不公开必须填写理由，理由不合理由DM扣威望。</div>
           <form id="action-form">
@@ -1222,8 +1226,7 @@ function actionPanel() {
               <button class="primaryButton" type="button" data-action-save="submitted">提交</button>
             </div>
           </form>
-        </section>
-      `}
+      </section>
       <section class="panel">
         <div class="panelHeader"><h2>行动记录</h2><div class="quota">私人 ${hasYouth ? 3 : 2} / 政府 ${hasYouth ? 2 : 1}</div></div>
         <div class="actionStack">${state.data.actions.map(actionCard).join("")}</div>
