@@ -22,7 +22,7 @@ const PUBLIC_TRAITS = [
   ["苦行僧", 2, ""],
   ["蹲监狱", -1, ""],
   ["年轻气盛", 1, "age_max:40"],
-  ["老逼登", 1, "age_min:60"],
+  ["老骥伏枥", 1, "age_min:60"],
 ];
 
 const SECRET_TRAITS = [
@@ -37,6 +37,20 @@ const SECRET_TRAITS = [
 ];
 
 const PURSUITS = ["利益至上", "权力至上", "国家至上", "理想至上"];
+
+const TRAIT_EFFECTS = {
+  约尔贵族: { prestige: 3, note: "威望+3" },
+  卡兰克贵族: { prestige: 3, note: "威望+3" },
+  精通双语: { note: "与其他族裔互动时免除威望/谈判/演讲惩罚骰，可伪造族裔身份" },
+  资本家: { prestige: 3, wealthRange: [40, 90], note: "威望+3；财富检定成功等级+1；财富40-90" },
+  神职人员: { prestige: 2, note: "威望+2；与本信仰教会互动的威望/谈判检定奖励骰" },
+  退役军官: { prestige: 1, note: "威望+1；可用黑料+1换取军官联系效果" },
+  博士学位: { prestige: 1, note: "威望+1；与知识分子互动的威望/谈判检定奖励骰" },
+  苦行僧: { prestige: 5, wealthRange: [10, 20], scandalDelta: -1, note: "威望+5；财富10-20；黑料数-1" },
+  蹲监狱: { note: "只能进行私人行动，直到离开监狱" },
+  年轻气盛: { actionBonus: 1, note: "所有类型行动可用数+1" },
+  老骥伏枥: { prestige: 10, scandalDelta: 1, note: "威望+10；黑料数+1" },
+};
 
 const COUNTRY_INTEL = {
   karank: {
@@ -1180,7 +1194,8 @@ function statInput(name, label, value, min, max, step = 1) {
 
 function traitCheckbox(group, name, cost, req) {
   const reqText = req ? ` · ${traitRequirementLabel(req)}` : "";
-  return `<label class="checkLine"><input type="checkbox" name="${group}" value="${escapeAttr(name)}" data-cost="${cost}" data-req="${escapeAttr(req)}"> ${escapeHtml(name)}（<span data-trait-cost-label>${traitCostLabel(cost)}</span>${reqText}）</label>`;
+  const effectText = TRAIT_EFFECTS[name]?.note ? ` · ${TRAIT_EFFECTS[name].note}` : "";
+  return `<label class="checkLine"><input type="checkbox" name="${group}" value="${escapeAttr(name)}" data-cost="${cost}" data-req="${escapeAttr(req)}"> ${escapeHtml(name)}（<span data-trait-cost-label>${traitCostLabel(cost)}</span>${reqText}${effectText}）</label>`;
 }
 
 function actionPanel() {
@@ -1745,14 +1760,18 @@ function updateCharacterSheetAssistant(form) {
   const factionId = String(data.get("faction_id") ?? "");
   const ownerId = state.profile.role === "dm" ? String(data.get("owner_id") ?? "") : state.profile.id;
   refreshTraitCostLabels(form, factionId, ownerId);
+  const traitEffects = combinedTraitEffects(publicTraits);
   const coreSum = ["body", "willpower", "wealth", "charm", "intellect", "perception"].reduce((total, key) => total + Number(attributes[key] ?? 0), 0);
   setMeter("attribute-meter", `属性点：${coreSum} / 400，剩余 ${400 - coreSum}`, coreSum === 400);
 
   const [wealthMin, wealthMax] = wealthRange(publicTraits);
+  updateNumberBounds(form, "wealth", wealthMin, wealthMax);
   setMeter("wealth-meter", `财富范围：${wealthMin}-${wealthMax}，当前 ${attributes.wealth}`, inRange(attributes.wealth, wealthMin, wealthMax));
 
   const age = numberField(data, "age");
-  setMeter("prestige-meter", `威望范围：20-${Math.max(20, age)}，当前 ${attributes.prestige}`, inRange(attributes.prestige, 20, Math.max(20, age)));
+  const actualPrestige = adjustedPrestige(attributes.prestige, publicTraits);
+  const prestigeDeltaText = traitEffects.prestige >= 0 ? `+${traitEffects.prestige}` : String(traitEffects.prestige);
+  setMeter("prestige-meter", `基础威望：20-${Math.max(20, age)}，当前 ${attributes.prestige}；特质修正 ${prestigeDeltaText}，实际 ${actualPrestige}`, inRange(attributes.prestige, 20, Math.max(20, age)));
   setMeter("luck-meter", `幸运：${attributes.luck}，需为15-90且为5的倍数`, inRange(attributes.luck, 15, 90) && Number(attributes.luck) % 5 === 0);
 
   const skillSpent = Object.values(skills).reduce((total, value) => total + Math.max(0, Number(value) - 10), 0);
@@ -1761,10 +1780,11 @@ function updateCharacterSheetAssistant(form) {
 
   const traitSpent = traitCost(publicTraits, secretTraits, factionId, ownerId);
   const traitOk = traitSpent <= 4 && !(publicTraits.includes("资本家") && publicTraits.includes("苦行僧"));
-  setMeter("trait-meter", `特质点：已用 ${traitSpent} / 4，剩余 ${4 - traitSpent}`, traitOk);
+  const scandalText = traitEffects.scandalDelta ? `；黑料数修正 ${traitEffects.scandalDelta > 0 ? "+" : ""}${traitEffects.scandalDelta}` : "";
+  setMeter("trait-meter", `特质点：已用 ${traitSpent} / 4，剩余 ${4 - traitSpent}${scandalText}`, traitOk);
 
   const retainers = parseRetainers(String(data.get("retainers") ?? ""));
-  const retainerLimit = Math.floor((Number(attributes.charm) + Number(attributes.prestige)) / 50);
+  const retainerLimit = Math.floor((Number(attributes.charm) + Number(actualPrestige)) / 50);
   const retainerFormatOk = retainers.every((retainer) => retainer.name && retainer.gender && retainer.age);
   setMeter("retainer-meter", `亲信：${retainers.length} / ${retainerLimit}`, retainers.length <= retainerLimit && retainerFormatOk);
 }
@@ -1876,9 +1896,10 @@ async function createCharacter() {
     alert(skillErrors.join("\n"));
     return;
   }
+  const storedAttributes = { ...attributes, prestige: adjustedPrestige(attributes.prestige, publicTraits) };
   const inserted = await supabase.from("characters_public").insert({
     owner_id: ownerId,
-    prestige: attributes.prestige,
+    prestige: storedAttributes.prestige,
     ...characterDraft,
   }).select("id").single();
   if (inserted.error) {
@@ -1888,7 +1909,7 @@ async function createCharacter() {
   const characterId = inserted.data.id;
   const privateInsert = await supabase.from("character_private").insert({
     character_id: characterId,
-    ...attributes,
+    ...storedAttributes,
     skills,
     secret_traits: secretTraits,
     pursuit,
@@ -1998,7 +2019,7 @@ function validateCharacterDraft(character, attributes, publicTraits, secretTrait
       errors.push(`${name} 不满足前置：${traitRequirementLabel(req)}。`);
     }
   }
-  const retainerLimit = Math.floor((Number(attributes.charm) + Number(attributes.prestige)) / 50);
+  const retainerLimit = Math.floor((Number(attributes.charm) + Number(adjustedPrestige(attributes.prestige, publicTraits))) / 50);
   if (retainers.length > retainerLimit) errors.push(`亲信数量超出上限：当前 ${retainers.length} 个，上限 ${retainerLimit} 个。`);
   retainers.forEach((retainer, index) => {
     if (!retainer.name || !retainer.gender || !retainer.age) {
@@ -2039,9 +2060,31 @@ function validateSkills(skills, intellect) {
 }
 
 function wealthRange(publicTraits) {
-  if (publicTraits.includes("苦行僧")) return [10, 20];
-  if (publicTraits.includes("资本家")) return [40, 90];
-  return [40, 80];
+  return combinedTraitEffects(publicTraits).wealthRange;
+}
+
+function combinedTraitEffects(publicTraits) {
+  const effects = { prestige: 0, scandalDelta: 0, actionBonus: 0, wealthRange: [40, 80] };
+  for (const trait of publicTraits) {
+    const effect = TRAIT_EFFECTS[trait];
+    if (!effect) continue;
+    effects.prestige += Number(effect.prestige ?? 0);
+    effects.scandalDelta += Number(effect.scandalDelta ?? 0);
+    effects.actionBonus += Number(effect.actionBonus ?? 0);
+    if (effect.wealthRange) effects.wealthRange = effect.wealthRange;
+  }
+  return effects;
+}
+
+function adjustedPrestige(basePrestige, publicTraits) {
+  return Math.max(0, Number(basePrestige ?? 0) + combinedTraitEffects(publicTraits).prestige);
+}
+
+function updateNumberBounds(form, name, min, max) {
+  const input = form.elements[name];
+  if (!input) return;
+  input.min = String(min);
+  input.max = String(max);
 }
 
 function inRange(value, min, max) {
