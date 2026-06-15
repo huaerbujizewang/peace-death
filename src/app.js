@@ -755,6 +755,7 @@ function overview() {
             </div>
           `).join("")}
         </div>
+        ${legitimacyThresholdPanel(legitimacy.total)}
         <div class="policyList">
           ${state.data.policies.map(policyRow).join("")}
         </div>
@@ -774,11 +775,60 @@ function overview() {
         <div class="moodGrid">
           ${state.data.groups.map((g) => `<span class="mood ${g.mood <= -1 ? "low" : g.mood === 2 ? "high" : ""}">${escapeHtml(g.name)}：${moodLabel(g.mood)}</span>`).join("")}
         </div>
+        ${prestigeReferencePanel()}
         <h3>国家情报</h3>
         ${countryIntelGrid()}
       </section>
     </div>
   `;
+}
+
+function legitimacyThresholdPanel(total) {
+  const freeParticipation = currentPolicyOption("civil_service") === "free_participation";
+  const coupThreshold = freeParticipation ? 50 : 25;
+  return `
+    <div class="thresholdReference">
+      <h3>合法性门槛速查</h3>
+      <div class="ruleList">
+        ${legitimacyRule("低于90%", "可尝试把尚未介入的政治或社会群体纳入派系；该群体需抵触或愤怒，并由派系领袖通过威望检定。", total < 90)}
+        ${legitimacyRule("低于75%", "所有境外势力耐心每回合 -7。", total < 75)}
+        ${legitimacyRule("低于50%", "可尝试把已经介入的政治或社会群体挖入己方派系；该群体需抵触或愤怒，并由双方派系领袖进行威望对抗。", total < 50)}
+        ${legitimacyRule(`低于${coupThreshold}%`, `${freeParticipation ? "因“允许自由参政”，政变前置提高到合法性低于50%。" : ""}士兵或地主贵族不满、抵触或愤怒，且发起者是战争部长或拥有军官联系时，军队可以发动政变。`, total < coupThreshold)}
+        ${legitimacyRule("等于0%", "政府立刻垮台；卡兰克与罗伊尔军事干预，进入世界大战前奏。", total <= 0, "danger")}
+        ${legitimacyRule("大选结算", "第五回合和平结束后，影响力最高派系赢得大选；若新政府合法性高于75%，胜选派系完全胜利，否则必须组成联合政府。", total > 75, "good")}
+      </div>
+    </div>
+  `;
+}
+
+function legitimacyRule(title, text, active, tone = "") {
+  const classes = ["ruleRow", active ? "active" : "", tone].filter(Boolean).join(" ");
+  return `<div class="${classes}"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(text)}</span></div>`;
+}
+
+function prestigeReferencePanel() {
+  const duke = positionHolder("duke");
+  const primeMinister = positionHolder("prime_minister");
+  const justiceMinister = positionHolder("justice_minister");
+  const heads = [duke, primeMinister].filter(Boolean);
+  const reformThreshold = heads.length ? Math.max(...heads.map(entityPrestige)) : null;
+  const justiceThreshold = justiceMinister ? entityPrestige(justiceMinister) : null;
+  return `
+    <div class="prestigeReference">
+      <h3>威望门槛速查</h3>
+      <div class="ruleList">
+        ${prestigeRule("对抗检定", "成功等级相同时，威望较高者获胜；威望也相同则受对抗方获胜。")}
+        ${prestigeRule("50基准", "公爵、首相等关键职位的威望围绕50计算合法性；低于50会拖累政府合法性。")}
+        ${prestigeRule("部长强推改革", reformThreshold === null ? "当前缺少公爵/首相门槛；默认需要公爵或首相同意。" : `若未获公爵或首相同意，部长威望必须高于 ${reformThreshold}，并赢得与公爵/首相的威望对抗，才能推行改革。`)}
+        ${prestigeRule("搜查/逮捕争议", justiceThreshold === null ? "司法部长空缺时由DM裁量。" : `没有司法部允许时，需要赢得与司法部长威望 ${justiceThreshold} 的对抗。`)}
+        ${prestigeRule("军事政变", "满足政变前置后，若发起者与公爵或首相不同阵营，需要与他们进行威望对抗。")}
+      </div>
+    </div>
+  `;
+}
+
+function prestigeRule(title, text) {
+  return `<div class="ruleRow"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(text)}</span></div>`;
 }
 
 function countryIntelGrid() {

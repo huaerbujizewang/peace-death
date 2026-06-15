@@ -473,6 +473,63 @@ h3 {
   gap: 10px;
 }
 
+.prestigeReference,
+.thresholdReference {
+  margin-top: 14px;
+}
+
+.ruleList {
+  display: grid;
+  gap: 8px;
+}
+
+.ruleRow {
+  display: grid;
+  grid-template-columns: minmax(86px, 0.34fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid #ded8cd;
+  border-radius: 6px;
+  background: #fbfaf7;
+}
+
+.ruleRow strong {
+  color: #30363d;
+}
+
+.ruleRow span {
+  color: #5c6470;
+  line-height: 1.55;
+}
+
+.ruleRow.active {
+  border-color: #c99a3a;
+  background: #fff7df;
+}
+
+.ruleRow.active strong {
+  color: #7a4d10;
+}
+
+.ruleRow.active.danger {
+  border-color: #d899a2;
+  background: #f9e8ea;
+}
+
+.ruleRow.active.danger strong {
+  color: #9b2332;
+}
+
+.ruleRow.active.good {
+  border-color: #8bc39c;
+  background: #eff9f2;
+}
+
+.ruleRow.active.good strong {
+  color: #1f6b45;
+}
+
 .monitorGrid {
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
@@ -1238,7 +1295,8 @@ textarea {
   }
 
   .monitorGrid,
-  .activityItem {
+  .activityItem,
+  .ruleRow {
     grid-template-columns: 1fr;
   }
 
