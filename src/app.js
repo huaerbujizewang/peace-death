@@ -69,6 +69,160 @@ const COUNTRY_INTEL = {
   },
 };
 
+const PEOPLE = [
+  {
+    group: "中央人物",
+    name: "汉娜·派·提克多德",
+    role: "卢里孔公爵",
+    portrait: "汉娜·派·提克多德.png",
+    lines: [
+      "父亲遇刺后继承公爵位，年纪轻，宫廷长辈围在她身边。",
+      "她以宪法紧急权力维持摄政内阁，对众治党旧政府保持强烈戒心。",
+      "她的性别与继承权成为全国争论焦点。",
+    ],
+  },
+  {
+    group: "党派人物",
+    name: "马蒂亚斯·凡·德尔梅尔",
+    role: "卢里孔众治党 · 前政府首相",
+    portrait: "马蒂亚斯·凡·德尔梅尔.png",
+    lines: ["前政府首相，众治党温和派领袖，开局被摄政内阁关押。", "他相信议会、多数、工会与福利政策能够稳住卢里孔。", "他在监狱里仍能通过律师、家属与工会干部影响外部局势。"],
+  },
+  {
+    group: "党派人物",
+    name: "伊莲娜·德·沃尔夫",
+    role: "卢里孔众治党 · 青年议员",
+    portrait: "伊莲娜·德·沃尔夫.png",
+    lines: ["众治党青年议员，出身产业工人家庭，擅长群众演说。", "她主张八小时工作制、媒体自由与女性平权。", "她把公爵继位后的紧急状态视为工人运动重组的机会。"],
+  },
+  {
+    group: "党派人物",
+    name: "克洛蒂尔德·德·拉谢尔",
+    role: "卢里孔蓝隼党 · 激进派领袖",
+    portrait: "克洛蒂尔德·德·拉谢尔.png",
+    lines: ["蓝隼党激进派领袖，卡兰克裔贵族家庭出身。", "她主张国立圣会宗、卡兰克优先政策与强力媒体管制。", "她认为卢里孔危机是文明边境遭到约尔势力侵蚀。"],
+  },
+  {
+    group: "党派人物",
+    name: "奥古斯特·德·莫朗",
+    role: "卢里孔蓝隼党 · 财政金主",
+    portrait: "奥古斯特·德·莫朗.png",
+    lines: ["蓝隼党财政金主，掌握银行、航运与进口贸易网络。", "他希望摄政内阁压制众治党，同时恢复资本家的政策优势。", "他同卡兰克共和国商界关系密切，经常被政敌称为外国金钱的代理人。"],
+  },
+  {
+    group: "党派人物",
+    name: "赫尔曼·冯·埃尔茨",
+    role: "约尔统一运动 · 主席",
+    portrait: "赫尔曼·冯·埃尔茨.png",
+    lines: ["约统运主席，瓦勒派神学院出身，演说风格尖锐。", "他主张约尔优先政策、国立瓦勒宗与对罗伊尔帝国的战略靠拢。", "他把卢里孔例外论称为软弱贵族的缓兵术。"],
+  },
+  {
+    group: "党派人物",
+    name: "弗里德里希·范·哈尔",
+    role: "约尔统一运动 · 组织部长",
+    portrait: "弗里德里希·范·哈尔.png",
+    lines: ["约统运组织部长，退役军官家庭出身，熟悉准军事社团。", "他相信街头力量、退伍军人协会与边境走私网络能改变选举结果。", "他经常向支持者暗示，议会道路需要配合更硬的手段。"],
+  },
+  {
+    group: "党派人物",
+    name: "维克托·德·格伦瓦尔",
+    role: "公爵忠诚派 · 宫廷顾问",
+    portrait: "维克托·德·格伦瓦尔.png",
+    lines: ["宫廷顾问，前任公爵时代的老臣，摄政内阁核心人物。", "他认为提克多德家族是卢里孔能够维持独立地位的关键。", "他擅长利用礼仪、法律文本与贵族关系压住临时政府内部裂缝。"],
+  },
+  {
+    group: "党派人物",
+    name: "塞勒斯·派·奥列克",
+    role: "公爵忠诚派 · 王室法律顾问",
+    portrait: "塞勒斯·派·奥列克.png",
+    lines: ["王室法律顾问，年轻的新锐，参与起草解散议会后的紧急命令。", "他主张以二元君主立宪制为底线，逐步重建公爵权威。", "他对蓝隼党与约统运都保持警惕，担心任何一方把公国献给境外强权。"],
+  },
+  {
+    group: "社会群体代表",
+    name: "塞莱斯蒂娜·勒布伦",
+    role: "大卡兰克派 · 报纸主编",
+    portrait: "塞莱斯蒂娜·勒布伦.png",
+    lines: ["卡兰克语报纸主编，圣会派家庭出身。", "她认为卢里孔的未来应当回到卡兰克文化圈。", "她很会制造街头情绪，尤其擅长把女性公爵与卡兰克女总统放进同一套政治叙事里。"],
+  },
+  {
+    group: "社会群体代表",
+    name: "奥托·冯·赖希贝格",
+    role: "大约尔派 · 瓦勒派牧师",
+    portrait: "奥托·冯·赖希贝格.png",
+    lines: ["瓦勒派牧师，长期在边境村镇布道。", "他把约尔语、瓦勒宗与罗伊尔帝国视为同一条历史道路。", "他对公爵家族抱有复杂情绪，尊重其血统，也怀疑其卢里孔例外论。"],
+  },
+  {
+    group: "社会群体代表",
+    name: "阿黛尔·范·艾克",
+    role: "进步知识分子 · 大学讲师",
+    portrait: "阿黛尔·范·艾克.png",
+    lines: ["大学讲师，研究宪政史、劳动法与女性教育。", "她支持世俗化、媒体自由与形式平权。", "她对众治党有明显同情，也愿意批评众治党内部的腐败传闻。"],
+  },
+  {
+    group: "社会群体代表",
+    name: "西奥多·范·霍夫",
+    role: "保守知识分子 · 王立学院院长",
+    portrait: "西奥多·范·霍夫.png",
+    lines: ["王立学院院长，圣会派学者，重视秩序与传统教育。", "他厌恶众治党的国有化语言，也厌恶约统运的街头粗暴风格。", "他希望公爵恢复稳定，同时保留公务员系统的独立性。"],
+  },
+  {
+    group: "社会群体代表",
+    name: "扬·德·斯密特",
+    role: "产业工人 · 工会基层代表",
+    portrait: "扬·德·斯密特.png",
+    lines: ["首都机械厂工头，工会基层代表。", "他关心工资、工时、食品价格与被捕工友的命运。", "他支持众治党，同时对党内律师和议员的妥协感到焦躁。"],
+  },
+  {
+    group: "社会群体代表",
+    name: "埃米尔·德·克莱尔",
+    role: "资本家 · 纺织业巨头",
+    portrait: "埃米尔·德·克莱尔.png",
+    lines: ["纺织业巨头，蓝隼党与约统运都想争取他的资金。", "他关心税制、关税、铁路订单与工人运动的扩张。", "他愿意同摄政内阁合作，前提是政府给出可靠的市场承诺。"],
+  },
+  {
+    group: "社会群体代表",
+    name: "马库斯·范·林登",
+    role: "士兵 · 陆军上校",
+    portrait: "马库斯·范·林登.png",
+    lines: ["陆军上校，驻扎首都外营区，深受基层军官信任。", "他关心军饷、军队荣誉与街头秩序。", "他对政客普遍缺乏耐心，政变传闻越多，他的话语权越高。"],
+  },
+  {
+    group: "社会群体代表",
+    name: "彼得·范·布鲁克",
+    role: "农民 · 北部乡村自治会长",
+    portrait: "彼得·范·布鲁克.png",
+    lines: ["北部乡村自治会长，代表小农、佃农与乡村教区。", "他关心粮价、税负、征兵与城市政府对乡村的轻视。", "他对所有大党都保持距离，谁能保护土地和教区，他便愿意听谁讲话。"],
+  },
+  {
+    group: "社会群体代表",
+    name: "阿尔方斯·德·梅尔滕",
+    role: "地主贵族 · 乡绅家族家主",
+    portrait: "阿尔方斯·德·梅尔滕.png",
+    lines: ["古老乡绅家族家主，拥有大片林地与租佃农庄。", "他支持公爵权威与财产权神圣，反感共和国口号与工人集会。", "他同宫廷关系紧密，私下也在评估军队介入政局的收益。"],
+  },
+  {
+    group: "外国首领",
+    name: "蕾妮·德·瓦卢瓦",
+    role: "卡兰克共和国总统",
+    portrait: "蕾妮·德·瓦卢瓦.png",
+    lines: ["卡兰克共和国总统，公开强调民族自决与圣会派共同体。", "她以共和国领袖形象压迫卢里孔保守派话语空间。", "她的外交班子把蓝隼党视为打开卢里孔大门的关键工具。"],
+  },
+  {
+    group: "外国首领",
+    name: "威廉·冯·阿德勒",
+    role: "罗伊尔帝国皇帝",
+    portrait: "威廉·冯·阿德勒.png",
+    lines: ["罗伊尔帝国皇帝，宣称保护全体约尔人和瓦勒派信徒。", "他关注卢里孔港口、铁路与边境军事缓冲价值。", "他对约统运保持耐心，也随时准备利用危机向西推进。"],
+  },
+  {
+    group: "外国首领",
+    name: "亚瑟·格雷维尔",
+    role: "德诺王国首相",
+    portrait: "亚瑟·格雷维尔.png",
+    lines: ["德诺首相，海峡彼岸的平衡政策执行者。", "他希望卢里孔维持缓冲国地位，避免卡兰克与罗伊尔提前摊牌。", "他的海外情报局在首都拥有少量线人，经常把避难承诺当成政治筹码。"],
+  },
+];
+
 const POLICY_CATALOG = {
   regime: ["政体", { dual_monarchy: "二元君主立宪制", ceremonial_monarchy: "虚位君主立宪制", parliamentary_republic: "议会共和制", presidential_republic: "总统共和制", military_government: "军政府" }],
   civil_service: ["公务员制度", { independent: "公务员系统独立", bureaucrats_in_politics: "允许文官参政", free_participation: "允许自由参政" }],
@@ -137,6 +291,8 @@ const POLICY_LEGITIMACY = {
   "nationality.yor_first": 5,
 };
 
+const BUDGET_LEVELS = ["耗尽", "缺乏", "平衡", "盈余", "充沛"];
+
 const SCANDALS = [
   ["罪大恶极", "你和亲妈有奸情。"],
   ["罪大恶极", "你和女儿有奸情。"],
@@ -177,6 +333,7 @@ const SCANDALS = [
 ];
 
 let supabase = null;
+let autoRefreshTimer = null;
 let state = {
   session: null,
   profile: null,
@@ -185,6 +342,10 @@ let state = {
   error: "",
   data: emptyData(),
 };
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && state.session) loadAll();
+});
 
 boot();
 
@@ -200,18 +361,38 @@ async function boot() {
     state.session = data.session;
     supabase.auth.onAuthStateChange((_event, session) => {
       state.session = session;
-      if (session) loadAll();
+      if (session) {
+        startAutoRefresh();
+        loadAll();
+      }
       else {
+        stopAutoRefresh();
         state.profile = null;
         render();
       }
     });
-    if (state.session) await loadAll();
+    if (state.session) {
+      startAutoRefresh();
+      await loadAll();
+    }
     render();
   } catch (error) {
     state.error = error.message ?? String(error);
     renderSetup();
   }
+}
+
+function startAutoRefresh() {
+  if (autoRefreshTimer) return;
+  autoRefreshTimer = window.setInterval(() => {
+    if (state.session && document.visibilityState === "visible") loadAll();
+  }, 20000);
+}
+
+function stopAutoRefresh() {
+  if (!autoRefreshTimer) return;
+  window.clearInterval(autoRefreshTimer);
+  autoRefreshTimer = null;
 }
 
 function emptyData() {
@@ -334,6 +515,7 @@ function render() {
     <nav class="tabs">
       ${tabButton("overview", "总览")}
       ${tabButton("character", "角色")}
+      ${tabButton("people", "人物")}
       ${tabButton("actions", "行动")}
       ${tabButton("government", "政府")}
       ${tabButton("parliament", "国会")}
@@ -413,6 +595,7 @@ function patienceMeter(name, value) {
 function renderTab() {
   if (state.tab === "overview") return overview();
   if (state.tab === "character") return characterPanel();
+  if (state.tab === "people") return peoplePanel();
   if (state.tab === "actions") return actionPanel();
   if (state.tab === "government") return governmentPanel();
   if (state.tab === "parliament") return parliamentPanel();
@@ -499,6 +682,46 @@ function countryPatience(key) {
   const aliases = { karank: "karank", royer: "royer" };
   const power = state.data.foreignPowers.find((p) => p.key === aliases[key]);
   return power ? Number(power.patience) : null;
+}
+
+function peoplePanel() {
+  const groups = Array.from(new Set(PEOPLE.map((person) => person.group)));
+  return `
+    <section class="panel wide peoplePanel">
+      <div class="panelHeader">
+        <div>
+          <h2>人物</h2>
+          <p>核心角色、党派人物、社会群体代表与外国首领。</p>
+        </div>
+        <span class="scorePill">${PEOPLE.length} 人</span>
+      </div>
+      ${groups.map((group) => `
+        <section class="peopleSection">
+          <h3>${escapeHtml(group)}</h3>
+          <div class="peopleGrid">
+            ${PEOPLE.filter((person) => person.group === group).map(personCard).join("")}
+          </div>
+        </section>
+      `).join("")}
+    </section>
+  `;
+}
+
+function personCard(person) {
+  return `
+    <article class="personCard">
+      <img src="${portraitPath(person.portrait)}" alt="${escapeAttr(person.name)}头像" loading="lazy">
+      <div>
+        <span>${escapeHtml(person.role)}</span>
+        <h4>${escapeHtml(person.name)}</h4>
+        ${person.lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function portraitPath(fileName) {
+  return `./assets/portraits/${encodeURI(fileName)}`;
 }
 
 function policyRow(policy) {
@@ -1170,6 +1393,9 @@ function bindTab() {
   root.querySelector('[data-action="reset-turn"]')?.addEventListener("click", resetTurn);
   root.querySelector('[data-action="save-state"]')?.addEventListener("click", saveState);
   root.querySelector('[data-action="assign-position"]')?.addEventListener("click", assignPosition);
+  root.querySelectorAll("[data-unassign-position]").forEach((button) => {
+    button.addEventListener("click", () => unassignPosition(button.dataset.unassignPosition, button.dataset.assignmentName));
+  });
   root.querySelector('[data-action="draw-scandal"]')?.addEventListener("click", addRandomScandal);
   root.querySelector('[data-action="add-scandal"]')?.addEventListener("click", addSelectedScandal);
   root.querySelector('[data-action="add-custom-scandal"]')?.addEventListener("click", addCustomScandal);
@@ -1639,15 +1865,73 @@ async function savePolicyChange(policyKey) {
     select.value = current;
     return;
   }
-  const { error } = await supabase.from("current_policies").update({ option_key: next }).eq("policy_key", policyKey);
-  if (error) alert(error.message);
+  const policyUpdate = await supabase.from("current_policies").update({ option_key: next }).eq("policy_key", policyKey);
+  if (policyUpdate.error) {
+    alert(policyUpdate.error.message);
+    return;
+  }
+  const effectError = await applyPolicyConsequences(current, next);
+  if (effectError) alert(effectError.message ?? String(effectError));
   else loadAll();
+}
+
+async function applyPolicyConsequences(previousOption, nextOption) {
+  const deltas = policyConsequenceDeltas(previousOption, nextOption);
+  const updates = [];
+  if (deltas.budget !== 0) {
+    updates.push(supabase.from("game_state").update({ budget_status: shiftBudget(state.data.state?.budget_status ?? "平衡", deltas.budget) }).eq("id", true));
+  }
+  for (const [groupName, delta] of deltas.moods) {
+    const group = state.data.groups.find((item) => item.name === groupName);
+    if (!group || delta === 0) continue;
+    updates.push(supabase.from("social_groups").update({ mood: clampMood(Number(group.mood) + delta) }).eq("id", group.id));
+  }
+  const results = await Promise.all(updates);
+  return results.find((result) => result.error)?.error ?? null;
+}
+
+function policyConsequenceDeltas(previousOption, nextOption) {
+  const moods = new Map();
+  let budget = 0;
+  const addMood = (name, delta) => moods.set(name, (moods.get(name) ?? 0) + delta);
+  const apply = (option, direction) => {
+    const effect = POLICY_EFFECTS[option];
+    if (!effect) return;
+    budget += Number(effect.budget ?? 0) * direction;
+    for (const name of effect.please ?? []) addMood(name, direction);
+    for (const name of effect.anger ?? []) addMood(name, -direction);
+  };
+  apply(previousOption, -1);
+  apply(nextOption, 1);
+  return { budget, moods };
+}
+
+function shiftBudget(currentStatus, delta) {
+  const index = BUDGET_LEVELS.includes(currentStatus) ? BUDGET_LEVELS.indexOf(currentStatus) : BUDGET_LEVELS.indexOf("平衡");
+  const nextIndex = Math.max(0, Math.min(BUDGET_LEVELS.length - 1, index + delta));
+  return BUDGET_LEVELS[nextIndex];
+}
+
+function clampMood(value) {
+  return Math.max(-2, Math.min(2, Math.round(Number(value) || 0)));
 }
 
 async function assignPosition() {
   const [entityType, entityId] = document.getElementById("assign-entity").value.split(":");
   const positionId = document.getElementById("assign-position").value;
+  const cleared = await supabase.from("position_assignments").delete().eq("position_id", positionId);
+  if (cleared.error) {
+    alert(cleared.error.message);
+    return;
+  }
   const { error } = await supabase.from("position_assignments").insert({ entity_type: entityType, entity_id: entityId, position_id: positionId });
+  if (error) alert(error.message);
+  else loadAll();
+}
+
+async function unassignPosition(assignmentId, assignmentName) {
+  if (!confirm(`确定撤任「${assignmentName}」吗？`)) return;
+  const { error } = await supabase.from("position_assignments").delete().eq("id", assignmentId);
   if (error) alert(error.message);
   else loadAll();
 }
@@ -1794,6 +2078,7 @@ function actionCard(action) {
 }
 
 function positionList() {
+  const isDm = state.profile.role === "dm";
   const names = new Map([
     ...state.data.characters.map((c) => [`character:${c.id}`, c.name]),
     ...state.data.retainers.map((r) => [`retainer:${r.id}`, r.name]),
@@ -1801,14 +2086,31 @@ function positionList() {
   const assignmentsByPosition = new Map();
   for (const assignment of state.data.assignments) {
     const list = assignmentsByPosition.get(assignment.position_id) ?? [];
-    list.push(escapeHtml(names.get(`${assignment.entity_type}:${assignment.entity_id}`) ?? "未知"));
+    list.push({
+      id: assignment.id,
+      name: names.get(`${assignment.entity_type}:${assignment.entity_id}`) ?? "未知",
+    });
     assignmentsByPosition.set(assignment.position_id, list);
   }
   return `
     <div class="positionList">
       ${state.data.positions.filter((p) => p.is_government).map((p) => {
         const holders = assignmentsByPosition.get(p.id);
-        return `<div class="positionRow ${holders?.length ? "" : "vacant"}"><strong>${escapeHtml(p.name)}</strong><span>${holders?.length ? holders.join("、") : "无"}</span></div>`;
+        return `
+          <div class="positionRow ${holders?.length ? "" : "vacant"}">
+            <strong>${escapeHtml(p.name)}</strong>
+            ${holders?.length ? `
+              <span class="positionHolders">
+                ${holders.map((holder) => `
+                  <span class="positionHolder">
+                    ${escapeHtml(holder.name)}
+                    ${isDm ? `<button class="iconButton dangerMini" type="button" title="撤任" data-unassign-position="${holder.id}" data-assignment-name="${escapeAttr(holder.name)}">×</button>` : ""}
+                  </span>
+                `).join("")}
+              </span>
+            ` : `<span>无</span>`}
+          </div>
+        `;
       }).join("")}
     </div>
   `;

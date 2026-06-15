@@ -567,6 +567,26 @@ h3 {
   font-weight: 800;
 }
 
+.positionHolders {
+  display: grid;
+  gap: 6px;
+}
+
+.positionHolder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dangerMini {
+  width: 28px;
+  min-height: 28px;
+  color: #9b2332;
+  background: #f8e7ea;
+  border-color: #e4b7bf;
+}
+
 .swatch {
   width: 14px;
   height: 14px;
@@ -771,6 +791,66 @@ textarea {
   border: 1px solid #d8d1c7;
   border-radius: 6px;
   background: #f9f7f1;
+}
+
+.peoplePanel {
+  background: #ebe6dc;
+}
+
+.peopleSection {
+  margin-top: 18px;
+}
+
+.peopleSection h3 {
+  margin: 0 0 10px;
+  color: #7d2b36;
+  font-size: 16px;
+}
+
+.peopleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.personCard {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  min-height: 198px;
+  border: 1px solid #cfc7bb;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fbfaf7;
+  box-shadow: inset 5px 0 0 #7d2b36;
+}
+
+.personCard img {
+  width: 132px;
+  height: 198px;
+  object-fit: cover;
+  background: #d7d0c4;
+}
+
+.personCard > div {
+  padding: 12px 14px;
+}
+
+.personCard span {
+  color: #7d2b36;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.personCard h4 {
+  margin: 4px 0 9px;
+  color: #20242a;
+  font-size: 18px;
+}
+
+.personCard p {
+  margin-bottom: 7px;
+  color: #4b545d;
+  line-height: 1.55;
 }
 
 .retainerCard span,
@@ -1042,6 +1122,10 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .peopleGrid {
+    grid-template-columns: 1fr;
+  }
+
   .intelPanel {
     grid-template-columns: 1fr;
   }
@@ -1090,5 +1174,15 @@ textarea {
 
   .countryGrid {
     grid-template-columns: 1fr;
+  }
+
+  .personCard {
+    grid-template-columns: 92px 1fr;
+    min-height: 138px;
+  }
+
+  .personCard img {
+    width: 92px;
+    height: 138px;
   }
 }
