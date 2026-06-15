@@ -22,7 +22,7 @@ const PUBLIC_TRAITS = [
   ["苦行僧", 2, ""],
   ["蹲监狱", -1, ""],
   ["年轻气盛", 1, "age_max:40"],
-  ["老骥伏枥", 1, "age_min:60"],
+  ["老逼登", 1, "age_min:60"],
 ];
 
 const SECRET_TRAITS = [
@@ -49,7 +49,7 @@ const TRAIT_EFFECTS = {
   苦行僧: { prestige: 5, wealthRange: [10, 20], scandalDelta: -1, note: "威望+5；财富10-20；黑料数-1" },
   蹲监狱: { note: "只能进行私人行动，直到离开监狱" },
   年轻气盛: { actionBonus: 1, note: "所有类型行动可用数+1" },
-  老骥伏枥: { prestige: 10, scandalDelta: 1, note: "威望+10；黑料数+1" },
+  老逼登: { prestige: 10, scandalDelta: 1, note: "威望+10；黑料数+1" },
 };
 
 const COUNTRY_INTEL = {
@@ -1445,6 +1445,7 @@ function dmPanel() {
         <label>合法性DM修正<input id="legitimacy-modifier" type="number" value="${state.data.state?.legitimacy_modifier ?? 0}"></label>
         <label>经济形势<input id="economy-status" value="${escapeAttr(state.data.state?.economy_status ?? "一切如常")}"></label>
         <label>国家预算<select id="budget-status">${BUDGET_LEVELS.map((status) => `<option ${status === state.data.state?.budget_status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
+        ${foreignPowerEditor()}
         <h3>社会群体满意度</h3>
         <div class="moodEditor">
           ${state.data.groups.map((group) => `
@@ -1503,7 +1504,8 @@ function dmPanel() {
 function dmPlayerMonitor() {
   const presenceByProfile = latestPresenceByProfile();
   const players = state.data.profiles.filter((profile) => profile.role === "player");
-  const observerProfiles = new Set(state.data.profiles.filter((profile) => profile.role === "observer").map((profile) => profile.id));
+  const observers = state.data.profiles.filter((profile) => profile.role === "observer");
+  const observerProfiles = new Set(observers.map((profile) => profile.id));
   const observerSessions = state.data.presence.filter((row) => observerProfiles.has(row.profile_id));
   const audits = state.data.audits.slice(0, 80);
   return `
@@ -1533,23 +1535,9 @@ function dmPlayerMonitor() {
               </article>
             `;
           }).join("") || `<div class="notice">还没有玩家账号。</div>`}
-          ${observerSessions.length ? `
+          ${observers.length ? `
             <h3>OB会话</h3>
-            ${observerSessions.map((presence, index) => {
-              const online = isProfileOnline(presence);
-              return `
-                <article class="presenceCard ${online ? "online" : ""}">
-                  <div>
-                    <strong>OB ${index + 1}</strong>
-                    <span>${online ? "在线" : "离线"}</span>
-                  </div>
-                  <small>最后心跳：${formatDateTime(presence.last_seen_at)}</small>
-                  <small>上线：${formatDateTime(presence.last_online_at)}</small>
-                  <small>下线：${formatDateTime(presence.last_offline_at)}</small>
-                  <small>当前页面：${escapeHtml(presence.current_tab || "未知")}</small>
-                </article>
-              `;
-            }).join("")}
+            ${observerPresenceCards(observers, observerSessions)}
           ` : ""}
         </div>
         <div class="activityFeed">
@@ -1564,6 +1552,48 @@ function dmPlayerMonitor() {
         </div>
       </div>
     </section>
+  `;
+}
+
+function foreignPowerEditor() {
+  const powers = state.data.foreignPowers.filter((power) => ["karank", "royer"].includes(power.key));
+  return `
+    <h3>大国耐心</h3>
+    <div class="moodEditor">
+      ${powers.map((power) => `
+        <label>
+          <span>${escapeHtml(power.name)}</span>
+          <input data-foreign-power="${power.id}" type="number" min="0" max="100" step="1" value="${Number(power.patience ?? 30)}">
+          <small>${Number(power.patience ?? 30)} / 100</small>
+        </label>
+      `).join("") || `<div class="notice">还没有大国耐心数据，请检查 foreign_powers 初始化。</div>`}
+    </div>
+  `;
+}
+
+function observerPresenceCards(observers, sessions) {
+  return observers.map((observer) => {
+    const ownSessions = sessions.filter((presence) => presence.profile_id === observer.id);
+    if (!ownSessions.length) {
+      return presenceCard(observer.display_name || "OB", null);
+    }
+    return ownSessions.map((presence, index) => presenceCard(`${observer.display_name || "OB"} ${ownSessions.length > 1 ? index + 1 : ""}`.trim(), presence)).join("");
+  }).join("");
+}
+
+function presenceCard(name, presence) {
+  const online = isProfileOnline(presence);
+  return `
+    <article class="presenceCard ${online ? "online" : ""}">
+      <div>
+        <strong>${escapeHtml(name)}</strong>
+        <span>${online ? "在线" : "离线"}</span>
+      </div>
+      <small>最后心跳：${formatDateTime(presence?.last_seen_at)}</small>
+      <small>上线：${formatDateTime(presence?.last_online_at)}</small>
+      <small>下线：${formatDateTime(presence?.last_offline_at)}</small>
+      <small>当前页面：${escapeHtml(presence?.current_tab || "未知")}</small>
+    </article>
   `;
 }
 
@@ -2263,9 +2293,12 @@ async function saveState() {
   const moodUpdates = Array.from(root.querySelectorAll("[data-mood-group]")).map((input) =>
     supabase.from("social_groups").update({ mood: clampMood(input.value) }).eq("id", input.dataset.moodGroup)
   );
-  const results = await Promise.all(moodUpdates);
-  const moodError = results.find((result) => result.error)?.error;
-  if (moodError) alert(moodError.message);
+  const patienceUpdates = Array.from(root.querySelectorAll("[data-foreign-power]")).map((input) =>
+    supabase.from("foreign_powers").update({ patience: clampPatience(input.value) }).eq("id", input.dataset.foreignPower)
+  );
+  const results = await Promise.all([...moodUpdates, ...patienceUpdates]);
+  const stateDetailError = results.find((result) => result.error)?.error;
+  if (stateDetailError) alert(stateDetailError.message);
   else {
     await recordActivity("save_state", "game_state", null, {
       legitimacy_modifier: legitimacyModifier,
@@ -2346,6 +2379,10 @@ function shiftBudget(currentStatus, delta) {
 
 function clampMood(value) {
   return Math.max(-2, Math.min(2, Math.round(Number(value) || 0)));
+}
+
+function clampPatience(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 }
 
 async function assignPosition() {
