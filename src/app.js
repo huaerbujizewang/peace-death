@@ -2188,7 +2188,7 @@ function effectiveTraitCost(trait, baseCost, factionId, ownerId = "") {
 }
 
 function hasUnionContactDiscount(factionId, ownerId = "") {
-  return factionKey(factionId) === "social_democrats" || profileDisplayName(ownerId) === "player1";
+  return profileDisplayName(ownerId) === "player1";
 }
 
 function traitCostLabel(cost) {
