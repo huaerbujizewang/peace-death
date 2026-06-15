@@ -600,6 +600,34 @@ h3 {
   margin: 14px 0;
 }
 
+.moodEditor {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.moodEditor label {
+  display: grid;
+  grid-template-columns: 1fr 64px;
+  gap: 5px 8px;
+  align-items: center;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid #ded8cd;
+  border-radius: 6px;
+  background: #fbfaf7;
+}
+
+.moodEditor span {
+  font-size: 12px;
+}
+
+.moodEditor small {
+  grid-column: 1 / -1;
+  color: #69727c;
+}
+
 .mood,
 .tagBlock b {
   display: inline-flex;
@@ -1110,7 +1138,8 @@ textarea {
   .statGrid,
   .statGrid.compact,
   .statInputGrid,
-  .legitimacyLedger {
+  .legitimacyLedger,
+  .moodEditor {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1156,7 +1185,8 @@ textarea {
   .statGrid,
   .statGrid.compact,
   .statInputGrid,
-  .legitimacyLedger {
+  .legitimacyLedger,
+  .moodEditor {
     grid-template-columns: 1fr;
   }
 

@@ -1290,7 +1290,19 @@ function dmPanel() {
         </div>
         <button class="ghostButton" data-action="save-phase">保存回合/阶段</button>
         <label>合法性DM修正<input id="legitimacy-modifier" type="number" value="${state.data.state?.legitimacy_modifier ?? 0}"></label>
-        <button class="ghostButton" data-action="save-state">保存修正</button>
+        <label>经济形势<input id="economy-status" value="${escapeAttr(state.data.state?.economy_status ?? "一切如常")}"></label>
+        <label>国家预算<select id="budget-status">${BUDGET_LEVELS.map((status) => `<option ${status === state.data.state?.budget_status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
+        <h3>社会群体满意度</h3>
+        <div class="moodEditor">
+          ${state.data.groups.map((group) => `
+            <label>
+              <span>${escapeHtml(group.name)}</span>
+              <input data-mood-group="${group.id}" type="number" min="-2" max="2" step="1" value="${Number(group.mood ?? 0)}">
+              <small>${moodLabel(group.mood)}</small>
+            </label>
+          `).join("")}
+        </div>
+        <button class="ghostButton" data-action="save-state">保存国家修正</button>
       </section>
       <section class="panel">
         <h2>黑料</h2>
@@ -1845,9 +1857,23 @@ async function resetTurn() {
 }
 
 async function saveState() {
-  const value = Number(document.getElementById("legitimacy-modifier")?.value ?? 0);
-  const { error } = await supabase.from("game_state").update({ legitimacy_modifier: value }).eq("id", true);
-  if (error) alert(error.message);
+  const legitimacyModifier = Number(document.getElementById("legitimacy-modifier")?.value ?? 0);
+  const economyStatus = document.getElementById("economy-status")?.value.trim() || "一切如常";
+  const budgetStatus = document.getElementById("budget-status")?.value ?? state.data.state?.budget_status ?? "平衡";
+  const stateUpdate = await supabase
+    .from("game_state")
+    .update({ legitimacy_modifier: legitimacyModifier, economy_status: economyStatus, budget_status: budgetStatus })
+    .eq("id", true);
+  if (stateUpdate.error) {
+    alert(stateUpdate.error.message);
+    return;
+  }
+  const moodUpdates = Array.from(root.querySelectorAll("[data-mood-group]")).map((input) =>
+    supabase.from("social_groups").update({ mood: clampMood(input.value) }).eq("id", input.dataset.moodGroup)
+  );
+  const results = await Promise.all(moodUpdates);
+  const moodError = results.find((result) => result.error)?.error;
+  if (moodError) alert(moodError.message);
   else loadAll();
 }
 
