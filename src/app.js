@@ -156,6 +156,7 @@ const PEOPLE = [
     name: "塞莱斯蒂娜·勒布伦",
     role: "大卡兰克派 · 报纸主编",
     portrait: "塞莱斯蒂娜·勒布伦.png",
+    portraitClass: "portraitNudgeDown",
     lines: ["卡兰克语报纸主编，圣会派家庭出身。", "她认为卢里孔的未来应当回到卡兰克文化圈。", "她很会制造街头情绪，尤其擅长把女性公爵与卡兰克女总统放进同一套政治叙事里。"],
   },
   {
@@ -163,6 +164,7 @@ const PEOPLE = [
     name: "奥托·冯·赖希贝格",
     role: "大约尔派 · 瓦勒派牧师",
     portrait: "奥托·冯·赖希贝格.png",
+    portraitClass: "portraitNudgeDown",
     lines: ["瓦勒派牧师，长期在边境村镇布道。", "他把约尔语、瓦勒宗与罗伊尔帝国视为同一条历史道路。", "他对公爵家族抱有复杂情绪，尊重其血统，也怀疑其卢里孔例外论。"],
   },
   {
@@ -936,8 +938,9 @@ function peoplePanel() {
 
 function personCard(person) {
   const positions = assignmentMap()[`person:${personEntityId(person.name)}`] ?? [];
+  const portraitClass = person.portraitClass ? ` ${person.portraitClass}` : "";
   return `
-    <article class="personCard">
+    <article class="personCard${portraitClass}">
       <img src="${portraitPath(person.portrait)}" alt="${escapeAttr(person.name)}头像" loading="lazy">
       <div>
         <span>${escapeHtml(person.role)}</span>

@@ -1094,6 +1094,11 @@ textarea {
   background: #d7d0c4;
 }
 
+.personCard.portraitNudgeDown img {
+  transform: translateY(6px) scale(1.04);
+  transform-origin: center;
+}
+
 .personCard > div {
   padding: 12px 14px;
 }
