@@ -366,6 +366,8 @@ let supabase = null;
 let autoRefreshTimer = null;
 let presenceTimer = null;
 let presenceClientId = "";
+const CHARACTER_DRAFT_STORAGE_KEY = "peace_death_character_draft_v1";
+let characterDraftCache = readCharacterDraftCache();
 let state = {
   session: null,
   profile: null,
@@ -553,6 +555,7 @@ function renderSetup() {
 }
 
 function render() {
+  rememberCharacterDraft();
   if (!state.session) {
     renderLogin();
     return;
@@ -1906,10 +1909,78 @@ function bindTab() {
   });
 }
 
+function rememberCharacterDraft(form = document.getElementById("character-form")) {
+  if (!form || !state.profile) return;
+  const fields = {};
+  form.querySelectorAll("input, select, textarea").forEach((control) => {
+    if (!control.name || control.type === "button") return;
+    if (control.type === "checkbox") {
+      fields[control.name] ??= [];
+      if (control.checked) fields[control.name].push(control.value || "on");
+      return;
+    }
+    fields[control.name] = control.value;
+  });
+  characterDraftCache = {
+    profileId: state.profile?.id ?? "",
+    fields,
+  };
+  writeCharacterDraftCache();
+}
+
+function restoreCharacterDraft(form) {
+  if (!form || characterDraftCache?.profileId !== state.profile?.id) return;
+  const fields = characterDraftCache.fields ?? {};
+  form.querySelectorAll("input, select, textarea").forEach((control) => {
+    if (!control.name || !(control.name in fields) || control.type === "button") return;
+    const value = fields[control.name];
+    if (control.type === "checkbox") {
+      const checkedValues = Array.isArray(value) ? value : [];
+      control.checked = checkedValues.includes(control.value || "on");
+      return;
+    }
+    if (control.tagName === "SELECT") {
+      const exists = Array.from(control.options).some((option) => option.value === value);
+      if (!exists) return;
+    }
+    control.value = value;
+  });
+}
+
+function clearCharacterDraft() {
+  characterDraftCache = null;
+  writeCharacterDraftCache();
+}
+
+function readCharacterDraftCache() {
+  try {
+    const raw = window.localStorage.getItem(CHARACTER_DRAFT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeCharacterDraftCache() {
+  try {
+    if (characterDraftCache) {
+      window.localStorage.setItem(CHARACTER_DRAFT_STORAGE_KEY, JSON.stringify(characterDraftCache));
+    } else {
+      window.localStorage.removeItem(CHARACTER_DRAFT_STORAGE_KEY);
+    }
+  } catch (_error) {
+    // 草稿缓存只是防丢保险，浏览器禁用 localStorage 时不影响车卡本身。
+  }
+}
+
 function setupCharacterSheetAssistant() {
   const form = document.getElementById("character-form");
   if (!form) return;
-  const update = () => updateCharacterSheetAssistant(form);
+  restoreCharacterDraft(form);
+  const update = () => {
+    rememberCharacterDraft(form);
+    updateCharacterSheetAssistant(form);
+  };
   const ownerInput = form.querySelector('[name="owner_id"]');
   ownerInput?.addEventListener("change", () => {
     const factionId = defaultCharacterFactionId(String(ownerInput.value));
@@ -2113,6 +2184,7 @@ async function createCharacter() {
     }
   }
   await recordActivity("create_character", "characters_public", characterId, { name: characterDraft.name });
+  clearCharacterDraft();
   await loadAll();
 }
 
