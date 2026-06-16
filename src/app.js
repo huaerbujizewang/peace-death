@@ -2017,7 +2017,7 @@ function updateCharacterSheetAssistant(form) {
   const ownerId = state.profile.role === "dm" ? String(data.get("owner_id") ?? "") : state.profile.id;
   refreshTraitCostLabels(form, factionId, ownerId);
   const traitEffects = combinedTraitEffects(publicTraits);
-  const coreSum = ["body", "willpower", "wealth", "charm", "intellect", "perception"].reduce((total, key) => total + Number(attributes[key] ?? 0), 0);
+  const coreSum = ["body", "willpower", "wealth", "charm", "intellect", "prestige", "perception"].reduce((total, key) => total + Number(attributes[key] ?? 0), 0);
   setMeter("attribute-meter", `属性点：${coreSum} / 400，剩余 ${400 - coreSum}`, coreSum === 400);
 
   const [wealthMin, wealthMax] = wealthRange(publicTraits);
@@ -2288,10 +2288,10 @@ function validateCharacterDraft(character, attributes, publicTraits, secretTrait
 
 function validateAttributes(character, attributes, publicTraits) {
   const errors = [];
-  const coreStats = ["body", "willpower", "wealth", "charm", "intellect", "perception"];
-  const labels = { body: "体质", willpower: "意志", wealth: "财富", charm: "魅力", intellect: "智力", perception: "感知" };
+  const coreStats = ["body", "willpower", "wealth", "charm", "intellect", "prestige", "perception"];
+  const labels = { body: "体质", willpower: "意志", wealth: "财富", charm: "魅力", intellect: "智力", prestige: "威望", perception: "感知" };
   const sum = coreStats.reduce((total, key) => total + Number(attributes[key] ?? 0), 0);
-  if (sum !== 400) errors.push(`六项属性点合计必须为 400；当前为 ${sum}。`);
+  if (sum !== 400) errors.push(`七项属性点合计必须为 400；当前为 ${sum}。`);
   for (const key of ["body", "willpower", "charm", "intellect", "perception"]) {
     if (!inRange(attributes[key], 40, 80)) errors.push(`${labels[key]}必须在 40-80 之间。`);
   }
