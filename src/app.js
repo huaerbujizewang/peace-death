@@ -366,6 +366,8 @@ let supabase = null;
 let autoRefreshTimer = null;
 let presenceTimer = null;
 let presenceClientId = "";
+let editTrackingBound = false;
+let unsavedEdit = false;
 const CHARACTER_DRAFT_STORAGE_KEY = "peace_death_character_draft_v1";
 let characterDraftCache = readCharacterDraftCache();
 let state = {
@@ -381,7 +383,7 @@ document.addEventListener("visibilitychange", () => {
   if (!state.session) return;
   if (document.visibilityState === "visible") {
     touchPresence(true);
-    loadAll();
+    if (!shouldDeferAutoRefresh()) loadAll();
   } else {
     touchPresence(false);
   }
@@ -429,7 +431,7 @@ async function boot() {
 function startAutoRefresh() {
   if (autoRefreshTimer) return;
   autoRefreshTimer = window.setInterval(() => {
-    if (state.session && document.visibilityState === "visible") loadAll();
+    if (state.session && document.visibilityState === "visible" && !shouldDeferAutoRefresh()) loadAll();
   }, 20000);
   presenceTimer = window.setInterval(() => {
     if (state.session && document.visibilityState === "visible") touchPresence(true);
@@ -540,6 +542,7 @@ async function loadAll() {
     presence: presenceRows,
     audits: auditRows,
   };
+  unsavedEdit = false;
   render();
 }
 
@@ -598,6 +601,7 @@ function render() {
     </nav>
     ${renderTab()}
   `);
+  bindEditTracking();
   bindCommon();
   bindTab();
 }
@@ -1842,6 +1846,28 @@ function bindCommon() {
   });
 }
 
+function bindEditTracking() {
+  if (editTrackingBound) return;
+  editTrackingBound = true;
+  root.addEventListener("input", markUnsavedEdit, true);
+  root.addEventListener("change", markUnsavedEdit, true);
+}
+
+function markUnsavedEdit(event) {
+  if (isEditableControl(event.target)) unsavedEdit = true;
+}
+
+function isEditableControl(element) {
+  return element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement ||
+    Boolean(element?.isContentEditable);
+}
+
+function shouldDeferAutoRefresh() {
+  return unsavedEdit || isEditableControl(document.activeElement);
+}
+
 function bindTab() {
   root.querySelectorAll(".policyEditor").forEach((editor) => {
     editor.addEventListener("click", (event) => event.stopPropagation());
@@ -2360,12 +2386,19 @@ function traitCost(publicTraits, secretTraits, factionId, ownerId = "") {
 }
 
 function effectiveTraitCost(trait, baseCost, factionId, ownerId = "") {
+  if (hasFreeContactTrait(trait, ownerId)) return 0;
   if (trait === "工会联系" && !hasUnionContactDiscount(factionId, ownerId)) return 2;
   return baseCost;
 }
 
 function hasUnionContactDiscount(factionId, ownerId = "") {
   return profileDisplayName(ownerId) === "player1";
+}
+
+function hasFreeContactTrait(trait, ownerId = "") {
+  const displayName = profileDisplayName(ownerId).toLowerCase();
+  return (trait === "卡兰克联系" && displayName === "player3") ||
+    (trait === "罗伊尔联系" && displayName === "player4");
 }
 
 function traitCostLabel(cost) {
