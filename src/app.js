@@ -368,6 +368,7 @@ let presenceTimer = null;
 let presenceClientId = "";
 let editTrackingBound = false;
 let unsavedEdit = false;
+let loadAllGeneration = 0;
 const CHARACTER_DRAFT_STORAGE_KEY = "peace_death_character_draft_v1";
 let characterDraftCache = readCharacterDraftCache();
 let state = {
@@ -383,7 +384,7 @@ document.addEventListener("visibilitychange", () => {
   if (!state.session) return;
   if (document.visibilityState === "visible") {
     touchPresence(true);
-    if (!shouldDeferAutoRefresh()) loadAll();
+    loadAll({ background: true });
   } else {
     touchPresence(false);
   }
@@ -431,7 +432,7 @@ async function boot() {
 function startAutoRefresh() {
   if (autoRefreshTimer) return;
   autoRefreshTimer = window.setInterval(() => {
-    if (state.session && document.visibilityState === "visible" && !shouldDeferAutoRefresh()) loadAll();
+    if (state.session && document.visibilityState === "visible") loadAll({ background: true });
   }, 20000);
   presenceTimer = window.setInterval(() => {
     if (state.session && document.visibilityState === "visible") touchPresence(true);
@@ -470,10 +471,13 @@ function emptyData() {
   };
 }
 
-async function loadAll() {
+async function loadAll({ background = false } = {}) {
+  if (background && shouldDeferAutoRefresh()) return;
+  const generation = ++loadAllGeneration;
   state.error = "";
   const profile = await supabase.from("profiles").select("*").eq("id", state.session.user.id).maybeSingle();
   if (profile.error) {
+    if (shouldDiscardLoadResult(generation, background)) return;
     state.error = profile.error.message;
     render();
     return;
@@ -502,6 +506,7 @@ async function loadAll() {
   ]);
   const error = queries.slice(0, -1).find((item) => item.error)?.error;
   if (error) {
+    if (shouldDiscardLoadResult(generation, background)) return;
     state.error = error.message;
     render();
     return;
@@ -515,6 +520,7 @@ async function loadAll() {
       supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(120),
     ]);
     if (presence.error || audits.error) {
+      if (shouldDiscardLoadResult(generation, background)) return;
       state.error = presence.error?.message ?? audits.error?.message;
       render();
       return;
@@ -524,6 +530,7 @@ async function loadAll() {
   }
   const privateResultsByAction = new Map((privateActionResults.data ?? []).map((item) => [item.action_id, item.result_private]));
   const visibleActions = (actions.data ?? []).map((action) => ({ ...action, result_private: privateResultsByAction.get(action.id) ?? "" }));
+  if (shouldDiscardLoadResult(generation, background)) return;
   state.data = {
     state: gameState.data,
     characters: characters.data ?? [],
@@ -544,6 +551,10 @@ async function loadAll() {
   };
   unsavedEdit = false;
   render();
+}
+
+function shouldDiscardLoadResult(generation, background) {
+  return generation !== loadAllGeneration || (background && shouldDeferAutoRefresh());
 }
 
 function renderSetup() {
