@@ -1911,6 +1911,7 @@ function bindEditTracking() {
   editTrackingBound = true;
   root.addEventListener("input", markUnsavedEdit, true);
   root.addEventListener("change", markUnsavedEdit, true);
+  root.addEventListener("toggle", rememberOpenDetails, true);
 }
 
 function markUnsavedEdit(event) {
@@ -1925,7 +1926,11 @@ function isEditableControl(element) {
 }
 
 function shouldDeferAutoRefresh() {
-  return unsavedEdit || isEditableControl(document.activeElement);
+  return unsavedEdit || isEditableControl(document.activeElement) || hasOpenDetails();
+}
+
+function hasOpenDetails() {
+  return Boolean(root.querySelector("details[data-detail-key][open]"));
 }
 
 function bindTab() {
