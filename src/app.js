@@ -370,7 +370,9 @@ let unsavedEdit = false;
 let loadAllGeneration = 0;
 let openDetailKeys = new Set();
 const CHARACTER_DRAFT_STORAGE_KEY = "peace_death_character_draft_v1";
+const RETAINER_DRAFT_STORAGE_KEY = "peace_death_retainer_draft_v1";
 let characterDraftCache = readCharacterDraftCache();
+let retainerDraftCache = readRetainerDraftCache();
 let state = {
   session: null,
   profile: null,
@@ -562,6 +564,7 @@ function renderSetup() {
 
 function render() {
   rememberCharacterDraft();
+  rememberRetainerDrafts();
   rememberOpenDetails();
   if (!state.session) {
     renderLogin();
@@ -606,6 +609,7 @@ function render() {
     ${renderTab()}
   `);
   restoreOpenDetails();
+  restoreRetainerDrafts();
   bindEditTracking();
   bindCommon();
   bindTab();
@@ -1906,7 +1910,9 @@ function bindEditTracking() {
 }
 
 function markUnsavedEdit(event) {
-  if (isEditableControl(event.target)) unsavedEdit = true;
+  if (!isEditableControl(event.target)) return;
+  unsavedEdit = true;
+  if (event.target.closest?.("[data-retainer-edit]")) rememberRetainerDrafts();
 }
 
 function isEditableControl(element) {
@@ -2034,6 +2040,64 @@ function restoreOpenDetails() {
   });
 }
 
+function rememberRetainerDrafts() {
+  if (!state.profile) return;
+  const editors = Array.from(root.querySelectorAll("[data-retainer-edit]"));
+  if (!editors.length) return;
+  const retainers = { ...(retainerDraftCache?.retainers ?? {}) };
+  const newRetainers = { ...(retainerDraftCache?.newRetainers ?? {}) };
+  for (const editor of editors) {
+    const characterId = editor.dataset.retainerEdit;
+    editor.querySelectorAll("[data-retainer-row]").forEach((row) => {
+      const retainerId = row.dataset.retainerRow;
+      retainers[retainerId] = retainerDraftFromInputs(retainerId);
+    });
+    newRetainers[characterId] = newRetainerDraft(characterId);
+  }
+  retainerDraftCache = {
+    profileId: state.profile.id,
+    retainers,
+    newRetainers,
+  };
+  writeRetainerDraftCache();
+}
+
+function restoreRetainerDrafts() {
+  if (!retainerDraftCache || retainerDraftCache.profileId !== state.profile?.id) return;
+  for (const [retainerId, draft] of Object.entries(retainerDraftCache.retainers ?? {})) {
+    setControlValue(`[data-retainer-name="${retainerId}"]`, draft.name);
+    setControlValue(`[data-retainer-gender="${retainerId}"]`, draft.gender);
+    setControlValue(`[data-retainer-age="${retainerId}"]`, draft.age);
+    setControlValue(`[data-retainer-notes="${retainerId}"]`, draft.notes);
+  }
+  for (const [characterId, draft] of Object.entries(retainerDraftCache.newRetainers ?? {})) {
+    setControlValue(`[data-new-retainer-name="${characterId}"]`, draft.name);
+    setControlValue(`[data-new-retainer-gender="${characterId}"]`, draft.gender);
+    setControlValue(`[data-new-retainer-age="${characterId}"]`, draft.age);
+    setControlValue(`[data-new-retainer-notes="${characterId}"]`, draft.notes);
+  }
+}
+
+function clearRetainerDraft(characterId, retainerIds = []) {
+  if (!retainerDraftCache) return;
+  const retainers = { ...(retainerDraftCache.retainers ?? {}) };
+  const newRetainers = { ...(retainerDraftCache.newRetainers ?? {}) };
+  for (const retainerId of retainerIds) delete retainers[retainerId];
+  if (characterId) delete newRetainers[characterId];
+  retainerDraftCache = {
+    profileId: state.profile?.id ?? retainerDraftCache.profileId,
+    retainers,
+    newRetainers,
+  };
+  writeRetainerDraftCache();
+}
+
+function setControlValue(selector, value) {
+  const control = root.querySelector(selector);
+  if (!control || value === undefined || value === null) return;
+  control.value = String(value);
+}
+
 function restoreCharacterDraft(form) {
   if (!form || characterDraftCache?.profileId !== state.profile?.id) return;
   const fields = characterDraftCache.fields ?? {};
@@ -2067,6 +2131,15 @@ function readCharacterDraftCache() {
   }
 }
 
+function readRetainerDraftCache() {
+  try {
+    const raw = window.localStorage.getItem(RETAINER_DRAFT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
 function writeCharacterDraftCache() {
   try {
     if (characterDraftCache) {
@@ -2076,6 +2149,24 @@ function writeCharacterDraftCache() {
     }
   } catch (_error) {
     // 草稿缓存只是防丢保险，浏览器禁用 localStorage 时不影响车卡本身。
+  }
+}
+
+function writeRetainerDraftCache() {
+  try {
+    if (retainerDraftCache) {
+      const hasRetainers = Object.keys(retainerDraftCache.retainers ?? {}).length > 0;
+      const hasNewRetainers = Object.keys(retainerDraftCache.newRetainers ?? {}).length > 0;
+      if (hasRetainers || hasNewRetainers) {
+        window.localStorage.setItem(RETAINER_DRAFT_STORAGE_KEY, JSON.stringify(retainerDraftCache));
+      } else {
+        window.localStorage.removeItem(RETAINER_DRAFT_STORAGE_KEY);
+      }
+    } else {
+      window.localStorage.removeItem(RETAINER_DRAFT_STORAGE_KEY);
+    }
+  } catch (_error) {
+    // 草稿缓存只是防丢保险，浏览器禁用 localStorage 时不影响亲信编辑本身。
   }
 }
 
@@ -2373,6 +2464,7 @@ async function saveRetainers(characterId) {
     alert(error.message);
     return;
   }
+  clearRetainerDraft(characterId, retainers.map((retainer) => retainer.id));
   await recordActivity("update_retainers", "retainers", characterId, { name: character.name });
   await loadAll();
 }
@@ -2392,6 +2484,7 @@ async function addRetainer(characterId) {
     alert(error.message);
     return;
   }
+  clearRetainerDraft(characterId);
   await recordActivity("add_retainer", "retainers", characterId, { name: draft.name });
   await loadAll();
 }
@@ -2406,6 +2499,7 @@ async function deleteRetainer(retainerId, retainerName) {
     alert(error.message);
     return;
   }
+  clearRetainerDraft(character.id, [retainerId]);
   await recordActivity("delete_retainer", "retainers", retainerId, { name: retainer.name });
   await loadAll();
 }
