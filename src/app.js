@@ -369,6 +369,7 @@ let presenceClientId = "";
 let editTrackingBound = false;
 let unsavedEdit = false;
 let loadAllGeneration = 0;
+let openDetailKeys = new Set();
 const CHARACTER_DRAFT_STORAGE_KEY = "peace_death_character_draft_v1";
 let characterDraftCache = readCharacterDraftCache();
 let state = {
@@ -570,6 +571,7 @@ function renderSetup() {
 
 function render() {
   rememberCharacterDraft();
+  rememberOpenDetails();
   if (!state.session) {
     renderLogin();
     return;
@@ -612,6 +614,7 @@ function render() {
     </nav>
     ${renderTab()}
   `);
+  restoreOpenDetails();
   bindEditTracking();
   bindCommon();
   bindTab();
@@ -1000,7 +1003,7 @@ function policyRow(policy) {
   const isDm = state.profile.role === "dm";
   const [label, options] = POLICY_CATALOG[policy.policy_key] ?? [policy.policy_key, {}];
   return `
-    <details class="policyRow">
+    <details class="policyRow" data-detail-key="policy:${escapeAttr(policy.policy_key)}">
       <summary>
         <span>${escapeHtml(label)}</span>
         ${isDm ? `
@@ -1217,7 +1220,7 @@ function characterPanel() {
 function retainerEditor(character, retainers) {
   const limit = retainerLimitForCharacter(character);
   return `
-    <details class="retainerEditor">
+    <details class="retainerEditor" data-detail-key="retainers:${escapeAttr(character.id)}">
       <summary>编辑亲信</summary>
       <div data-retainer-edit="${character.id}">
         <div class="retainerEditList">
@@ -1335,7 +1338,7 @@ function dmCharacterEditor(character, stats) {
   const skills = stats?.skills ?? {};
   const skillKeys = Array.from(new Set(["谈判", "演讲", "写作", "法律", "会计", ...Object.keys(skills)]));
   return `
-    <details class="dmEditor">
+    <details class="dmEditor" data-detail-key="dm-character:${escapeAttr(character.id)}">
       <summary>DM编辑角色卡</summary>
       <form data-character-edit="${character.id}">
         <div class="formRow">
@@ -2018,6 +2021,21 @@ function rememberCharacterDraft(form = document.getElementById("character-form")
     fields,
   };
   writeCharacterDraftCache();
+}
+
+function rememberOpenDetails() {
+  const keys = Array.from(root.querySelectorAll("details[data-detail-key][open]"))
+    .map((detail) => detail.dataset.detailKey)
+    .filter(Boolean);
+  if (keys.length || root.querySelector("details[data-detail-key]")) {
+    openDetailKeys = new Set(keys);
+  }
+}
+
+function restoreOpenDetails() {
+  root.querySelectorAll("details[data-detail-key]").forEach((detail) => {
+    detail.open = openDetailKeys.has(detail.dataset.detailKey);
+  });
 }
 
 function restoreCharacterDraft(form) {
