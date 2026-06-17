@@ -1164,6 +1164,7 @@ function characterPanel() {
         const stats = statsByCharacter.get(character.id);
         const retainers = state.data.retainers.filter((r) => r.character_id === character.id);
         const canSeeRetainers = dm || character.owner_id === state.profile.id;
+        const canEditRetainers = canEditCharacterRetainers(character);
         return `
           <section class="panel characterCard">
             <div class="panelHeader">
@@ -1192,6 +1193,7 @@ function characterPanel() {
                   </div>
                 `).join("")}
               </div>
+              ${canEditRetainers ? retainerEditor(character, retainers) : ""}
             ` : ""}
             ${dm ? dmCharacterEditor(character, stats) : ""}
           </section>
@@ -1199,6 +1201,50 @@ function characterPanel() {
       }).join("")}
     </div>
   `;
+}
+
+function retainerEditor(character, retainers) {
+  const limit = retainerLimitForCharacter(character);
+  return `
+    <details class="retainerEditor">
+      <summary>编辑亲信</summary>
+      <div data-retainer-edit="${character.id}">
+        <div class="retainerEditList">
+          ${retainers.map(retainerEditRow).join("") || `<div class="notice">还没有亲信。</div>`}
+        </div>
+        <div class="buttonRow">
+          <span class="quota">当前 ${retainers.length} / ${Number.isFinite(limit) ? limit : "?"}</span>
+          <button class="primaryButton" type="button" data-save-retainers="${character.id}">保存亲信修改</button>
+        </div>
+        <h3>新增亲信</h3>
+        <div class="retainerEditRow new">
+          <label>姓名<input data-new-retainer-name="${character.id}"></label>
+          <label>性别${retainerGenderSelect(`data-new-retainer-gender="${character.id}"`)}</label>
+          <label>年龄<input data-new-retainer-age="${character.id}" type="number" min="1"></label>
+          <label>备注<input data-new-retainer-notes="${character.id}"></label>
+          <button class="ghostButton" type="button" data-add-retainer="${character.id}">新增亲信</button>
+        </div>
+      </div>
+    </details>
+  `;
+}
+
+function retainerEditRow(retainer) {
+  return `
+    <div class="retainerEditRow" data-retainer-row="${retainer.id}">
+      <label>姓名<input data-retainer-name="${retainer.id}" value="${escapeAttr(retainer.name)}"></label>
+      <label>性别${retainerGenderSelect(`data-retainer-gender="${retainer.id}"`, retainer.gender)}</label>
+      <label>年龄<input data-retainer-age="${retainer.id}" type="number" min="1" value="${Number(retainer.age ?? "") || ""}"></label>
+      <label>备注<input data-retainer-notes="${retainer.id}" value="${escapeAttr(retainer.notes ?? "")}"></label>
+      <button class="dangerButton" type="button" data-delete-retainer="${retainer.id}" data-retainer-name="${escapeAttr(retainer.name)}">删除</button>
+    </div>
+  `;
+}
+
+function retainerGenderSelect(attributes, selected = "男") {
+  const options = ["男", "女", "其他"];
+  const values = options.includes(selected) ? options : [selected, ...options];
+  return `<select ${attributes}>${values.map((value) => `<option ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>`;
 }
 
 function characterCreateForm() {
@@ -1888,6 +1934,15 @@ function bindTab() {
   root.querySelectorAll("[data-save-character]").forEach((button) => {
     button.addEventListener("click", () => saveCharacterEdits(button.dataset.saveCharacter));
   });
+  root.querySelectorAll("[data-save-retainers]").forEach((button) => {
+    button.addEventListener("click", () => saveRetainers(button.dataset.saveRetainers));
+  });
+  root.querySelectorAll("[data-add-retainer]").forEach((button) => {
+    button.addEventListener("click", () => addRetainer(button.dataset.addRetainer));
+  });
+  root.querySelectorAll("[data-delete-retainer]").forEach((button) => {
+    button.addEventListener("click", () => deleteRetainer(button.dataset.deleteRetainer, button.dataset.retainerName));
+  });
   root.querySelectorAll("[data-delete-action]").forEach((button) => {
     button.addEventListener("click", () => deleteAction(button.dataset.deleteAction, button.dataset.actionTitle));
   });
@@ -2272,6 +2327,94 @@ async function saveCharacterEdits(characterId) {
   alert("角色卡已保存。");
   await recordActivity("update_character", "characters_public", characterId, { name: publicPatch.name });
   await loadAll();
+}
+
+async function saveRetainers(characterId) {
+  const character = state.data.characters.find((item) => item.id === characterId);
+  if (!character || !canEditCharacterRetainers(character)) return;
+  const wrapper = root.querySelector(`[data-retainer-edit="${characterId}"]`);
+  if (!wrapper) return;
+  const retainers = state.data.retainers.filter((retainer) => retainer.character_id === characterId);
+  const drafts = retainers.map((retainer) => [retainer.id, retainerDraftFromInputs(retainer.id)]);
+  const errors = validateRetainerDrafts(character, drafts.map(([, draft]) => draft));
+  if (errors.length) {
+    alert(errors.join("\n"));
+    return;
+  }
+  const updates = drafts.map(([id, draft]) => supabase.from("retainers").update(draft).eq("id", id).eq("character_id", characterId));
+  const results = await Promise.all(updates);
+  const error = results.find((result) => result.error)?.error;
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  await recordActivity("update_retainers", "retainers", characterId, { name: character.name });
+  await loadAll();
+}
+
+async function addRetainer(characterId) {
+  const character = state.data.characters.find((item) => item.id === characterId);
+  if (!character || !canEditCharacterRetainers(character)) return;
+  const draft = newRetainerDraft(characterId);
+  const currentCount = state.data.retainers.filter((retainer) => retainer.character_id === characterId).length;
+  const errors = validateRetainerDrafts(character, [draft], currentCount);
+  if (errors.length) {
+    alert(errors.join("\n"));
+    return;
+  }
+  const { error } = await supabase.from("retainers").insert({ character_id: characterId, ...draft });
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  await recordActivity("add_retainer", "retainers", characterId, { name: draft.name });
+  await loadAll();
+}
+
+async function deleteRetainer(retainerId, retainerName) {
+  const retainer = state.data.retainers.find((item) => item.id === retainerId);
+  const character = retainer ? state.data.characters.find((item) => item.id === retainer.character_id) : null;
+  if (!retainer || !character || !canEditCharacterRetainers(character)) return;
+  if (!confirm(`确定删除亲信“${retainerName || retainer.name}”吗？相关职位任命也会被清除。`)) return;
+  const { error } = await supabase.rpc("delete_retainer", { retainer_uuid: retainerId });
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  await recordActivity("delete_retainer", "retainers", retainerId, { name: retainer.name });
+  await loadAll();
+}
+
+function retainerDraftFromInputs(retainerId) {
+  return {
+    name: root.querySelector(`[data-retainer-name="${retainerId}"]`)?.value.trim() ?? "",
+    gender: root.querySelector(`[data-retainer-gender="${retainerId}"]`)?.value ?? "",
+    age: Number(root.querySelector(`[data-retainer-age="${retainerId}"]`)?.value ?? 0),
+    notes: root.querySelector(`[data-retainer-notes="${retainerId}"]`)?.value.trim() ?? "",
+  };
+}
+
+function newRetainerDraft(characterId) {
+  return {
+    name: root.querySelector(`[data-new-retainer-name="${characterId}"]`)?.value.trim() ?? "",
+    gender: root.querySelector(`[data-new-retainer-gender="${characterId}"]`)?.value ?? "",
+    age: Number(root.querySelector(`[data-new-retainer-age="${characterId}"]`)?.value ?? 0),
+    notes: root.querySelector(`[data-new-retainer-notes="${characterId}"]`)?.value.trim() ?? "",
+  };
+}
+
+function validateRetainerDrafts(character, drafts, existingCount = 0) {
+  const errors = [];
+  const limit = retainerLimitForCharacter(character);
+  if (Number.isFinite(limit) && existingCount + drafts.length > limit) {
+    errors.push(`亲信数量超出上限：当前 ${existingCount + drafts.length} 个，上限 ${limit} 个。`);
+  }
+  drafts.forEach((draft, index) => {
+    if (!draft.name) errors.push(`第 ${index + 1} 个亲信缺少姓名。`);
+    if (!["男", "女", "其他"].includes(draft.gender)) errors.push(`第 ${index + 1} 个亲信性别只能选择男、女或其他。`);
+    if (!Number.isInteger(draft.age) || draft.age <= 0) errors.push(`第 ${index + 1} 个亲信年龄必须是正整数。`);
+  });
+  return errors;
 }
 
 async function deleteAction(actionId, actionTitle) {
@@ -3127,6 +3270,16 @@ function scandalLabels(scandals) {
 
 function canDeleteCharacter(character) {
   return isDm() || (isPlayer() && character.owner_id === state.profile.id);
+}
+
+function canEditCharacterRetainers(character) {
+  return isDm() || (isPlayer() && character.owner_id === state.profile.id);
+}
+
+function retainerLimitForCharacter(character) {
+  const stats = state.data.privateStats.find((item) => item.character_id === character.id);
+  if (!stats) return Infinity;
+  return Math.floor((Number(stats.charm ?? 0) + Number(character.prestige ?? stats.prestige ?? 20)) / 50);
 }
 
 function defaultCharacterOwnerId() {

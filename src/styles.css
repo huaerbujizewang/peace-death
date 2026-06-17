@@ -1056,6 +1056,37 @@ textarea {
   background: #f9f7f1;
 }
 
+.retainerEditor {
+  margin-top: 12px;
+}
+
+.retainerEditor summary {
+  color: #274c77;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.retainerEditList {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.retainerEditRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 92px 88px minmax(150px, 1.2fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid #ded8cd;
+  border-radius: 6px;
+  background: #fbfaf7;
+}
+
+.retainerEditRow label {
+  margin-bottom: 0;
+}
+
 .peoplePanel {
   background: #ebe6dc;
 }
@@ -1458,7 +1489,8 @@ textarea {
 
   .policyRow,
   .factionRow,
-  .positionRow {
+  .positionRow,
+  .retainerEditRow {
     grid-template-columns: 1fr;
   }
 
