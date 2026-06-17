@@ -363,7 +363,6 @@ const SCANDALS = [
 ];
 
 let supabase = null;
-let autoRefreshTimer = null;
 let presenceTimer = null;
 let presenceClientId = "";
 let editTrackingBound = false;
@@ -385,7 +384,6 @@ document.addEventListener("visibilitychange", () => {
   if (!state.session) return;
   if (document.visibilityState === "visible") {
     touchPresence(true);
-    loadAll({ background: true });
   } else {
     touchPresence(false);
   }
@@ -431,20 +429,13 @@ async function boot() {
 }
 
 function startAutoRefresh() {
-  if (autoRefreshTimer) return;
-  autoRefreshTimer = window.setInterval(() => {
-    if (state.session && document.visibilityState === "visible") loadAll({ background: true });
-  }, 20000);
+  if (presenceTimer) return;
   presenceTimer = window.setInterval(() => {
     if (state.session && document.visibilityState === "visible") touchPresence(true);
   }, 15000);
 }
 
 function stopAutoRefresh() {
-  if (autoRefreshTimer) {
-    window.clearInterval(autoRefreshTimer);
-    autoRefreshTimer = null;
-  }
   if (presenceTimer) {
     window.clearInterval(presenceTimer);
     presenceTimer = null;
