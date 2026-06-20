@@ -367,6 +367,7 @@ let presenceTimer = null;
 let presenceClientId = "";
 let editTrackingBound = false;
 let unsavedEdit = false;
+let actionSaveInFlight = false;
 let loadAllGeneration = 0;
 let openDetailKeys = new Set();
 const CHARACTER_DRAFT_STORAGE_KEY = "peace_death_character_draft_v1";
@@ -1673,22 +1674,87 @@ function dmPanel() {
       </section>
       <section class="panel wide">
         <h2>待处理行动</h2>
-        <div class="actionStack">
-          ${state.data.actions.filter((a) => ["submitted", "approved"].includes(a.status)).map((a) => `
-            <article class="actionCard">
-              <strong>${escapeHtml(a.title)}</strong>
-              <span>${statusLabel(a.status)} · ${a.action_kind === "private" ? "私人行动" : "政府行动"}</span>
-              <p>${escapeHtml(a.description)}</p>
-              <div class="buttonRow">
-                <button class="primaryButton" data-process="${a.id}">填写结果并处理</button>
-                <button class="dangerButton" data-delete-action="${a.id}" data-action-title="${escapeAttr(a.title || "未命名行动")}" type="button">删除</button>
-              </div>
-            </article>
-          `).join("")}
-        </div>
+        ${pendingActionStack()}
       </section>
     </div>
   `;
+}
+
+function pendingActionStack() {
+  const groups = groupedPendingActions();
+  if (!groups.length) return `<div class="notice">暂无待处理行动。</div>`;
+  return `
+    <div class="actionStack">
+      ${groups.map(pendingActionCard).join("")}
+    </div>
+  `;
+}
+
+function groupedPendingActions() {
+  const grouped = new Map();
+  for (const action of state.data.actions.filter((a) => ["submitted", "approved"].includes(a.status))) {
+    const key = pendingActionSignature(action);
+    if (!grouped.has(key)) grouped.set(key, { action, duplicateIds: [] });
+    else grouped.get(key).duplicateIds.push(action.id);
+  }
+  return Array.from(grouped.values());
+}
+
+function pendingActionSignature(action) {
+  return [
+    action.owner_id,
+    action.turn_number,
+    action.action_kind,
+    action.actor_type,
+    action.actor_id,
+    action.title,
+    action.category,
+    action.target,
+    action.description,
+    action.resources,
+    action.visibility,
+    action.non_public_reason,
+    action.status,
+  ].map((value) => String(value ?? "").trim()).join("\u001f");
+}
+
+function pendingActionCard(group) {
+  const action = group.action;
+  const duplicateCount = group.duplicateIds.length;
+  const duplicateLabel = duplicateCount ? ` · 重复 ${duplicateCount} 条已折叠` : "";
+  return `
+    <article class="actionCard">
+      <div class="actionHeader">
+        <div>
+          <strong>${escapeHtml(action.title || "未命名行动")}</strong>
+          <span>${statusLabel(action.status)} · ${action.action_kind === "private" ? "私人行动" : "政府行动"}${duplicateLabel}</span>
+          <span>提交者：${escapeHtml(actionOwnerLabel(action))} · 执行者：${escapeHtml(actionActorLabel(action))}</span>
+        </div>
+      </div>
+      <p>${escapeHtml(action.description)}</p>
+      <div class="buttonRow">
+        <button class="primaryButton" data-process="${action.id}">填写结果并处理</button>
+        <button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>
+        ${duplicateCount ? `<button class="ghostButton" data-delete-duplicate-actions="${escapeAttr(group.duplicateIds.join(","))}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除重复项</button>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function actionOwnerLabel(action) {
+  const profileName = profileDisplayName(action.owner_id) || "未知账号";
+  const character = state.data.characters.find((item) => item.owner_id === action.owner_id && item.active !== false);
+  return character ? `${character.name}（${profileName}）` : profileName;
+}
+
+function actionActorLabel(action) {
+  if (action.actor_type === "character") {
+    return state.data.characters.find((item) => item.id === action.actor_id)?.name ?? "未知角色";
+  }
+  if (action.actor_type === "retainer") {
+    return state.data.retainers.find((item) => item.id === action.actor_id)?.name ?? "未知亲信";
+  }
+  return "未指定";
 }
 
 function dmSupporterEditor() {
@@ -1844,6 +1910,7 @@ function activityLabel(action) {
     logout: "退出",
     create_action: "创建行动",
     delete_action: "删除行动",
+    delete_duplicate_actions: "删除重复行动",
     process_action: "处理行动",
     approve_action: "批准/驳回行动",
     create_character: "创建角色卡",
@@ -1938,7 +2005,7 @@ function bindTab() {
   });
 
   root.querySelectorAll("[data-action-save]").forEach((button) => {
-    button.addEventListener("click", () => saveAction(button.dataset.actionSave));
+    button.addEventListener("click", () => saveAction(button.dataset.actionSave, button));
   });
 
   root.querySelector('[data-action="create-character"]')?.addEventListener("click", createCharacter);
@@ -1960,6 +2027,9 @@ function bindTab() {
   });
   root.querySelectorAll("[data-delete-action]").forEach((button) => {
     button.addEventListener("click", () => deleteAction(button.dataset.deleteAction, button.dataset.actionTitle));
+  });
+  root.querySelectorAll("[data-delete-duplicate-actions]").forEach((button) => {
+    button.addEventListener("click", () => deleteDuplicateActions(button.dataset.deleteDuplicateActions, button.dataset.actionTitle));
   });
 
   root.querySelectorAll("[data-approve]").forEach((button) => {
@@ -2249,51 +2319,75 @@ function setMeter(id, text, ok) {
   element.classList.toggle("good", ok);
 }
 
-async function saveAction(mode) {
+async function saveAction(mode, triggerButton) {
   if (!isPlayer() && !isDm()) return;
+  if (actionSaveInFlight) return;
   const form = document.getElementById("action-form");
   if (!form) return;
-  const data = new FormData(form);
-  const [actorType, actorId] = String(data.get("actor")).split(":");
-  const actionKind = data.get("action_kind");
-  const expectedPhase = actionKind === "private" ? "private_submission" : "government_submission";
-  if (mode !== "draft" && state.data.state?.current_phase !== expectedPhase) {
-    alert(`当前阶段不能提交${actionKind === "private" ? "私人" : "政府"}行动。`);
-    return;
-  }
-  const isPublic = Boolean(data.get("public_government"));
-  const reason = String(data.get("non_public_reason") ?? "");
-  if (actionKind === "government" && !isPublic && !reason.trim()) {
-    alert("政府行动不公开必须填写理由。");
-    return;
-  }
-  const needsApproval = actionKind === "government" && !isGovernmentHead();
-  const status = mode === "draft" ? "draft" : needsApproval ? "needs_approval" : "submitted";
-  const { error } = await supabase.from("actions").insert({
-    owner_id: state.profile.id,
-    turn_number: state.data.state?.current_turn ?? 1,
-    action_kind: actionKind,
-    actor_type: actorType,
-    actor_id: actorId,
-    title: data.get("title"),
-    category: data.get("category"),
-    target: data.get("target"),
-    description: data.get("description"),
-    resources: data.get("resources"),
-    visibility: actionKind === "private" ? "private" : isPublic ? "public" : "private",
-    non_public_reason: reason,
-    requires_approval: needsApproval,
-    status,
-  });
-  if (error) alert(error.message);
-  else {
-    await recordActivity("create_action", "actions", null, {
-      title: String(data.get("title") ?? ""),
+  actionSaveInFlight = true;
+  setActionSaveBusy(true, triggerButton, mode);
+  try {
+    const data = new FormData(form);
+    const [actorType, actorId] = String(data.get("actor")).split(":");
+    const actionKind = data.get("action_kind");
+    const expectedPhase = actionKind === "private" ? "private_submission" : "government_submission";
+    if (mode !== "draft" && state.data.state?.current_phase !== expectedPhase) {
+      alert(`当前阶段不能提交${actionKind === "private" ? "私人" : "政府"}行动。`);
+      return;
+    }
+    const isPublic = Boolean(data.get("public_government"));
+    const reason = String(data.get("non_public_reason") ?? "");
+    if (actionKind === "government" && !isPublic && !reason.trim()) {
+      alert("政府行动不公开必须填写理由。");
+      return;
+    }
+    const needsApproval = actionKind === "government" && !isGovernmentHead();
+    const status = mode === "draft" ? "draft" : needsApproval ? "needs_approval" : "submitted";
+    const { error } = await supabase.from("actions").insert({
+      owner_id: state.profile.id,
+      turn_number: state.data.state?.current_turn ?? 1,
+      action_kind: actionKind,
+      actor_type: actorType,
+      actor_id: actorId,
+      title: data.get("title"),
+      category: data.get("category"),
+      target: data.get("target"),
+      description: data.get("description"),
+      resources: data.get("resources"),
+      visibility: actionKind === "private" ? "private" : isPublic ? "public" : "private",
+      non_public_reason: reason,
+      requires_approval: needsApproval,
       status,
-      kind: actionKind,
     });
-    loadAll();
+    if (error) alert(error.message);
+    else {
+      await recordActivity("create_action", "actions", null, {
+        title: String(data.get("title") ?? ""),
+        status,
+        kind: actionKind,
+      });
+      await loadAll();
+    }
+  } finally {
+    actionSaveInFlight = false;
+    setActionSaveBusy(false, triggerButton, mode);
   }
+}
+
+function setActionSaveBusy(busy, triggerButton, mode) {
+  root.querySelectorAll("[data-action-save]").forEach((button) => {
+    if (busy) {
+      button.dataset.originalText = button.dataset.originalText || button.textContent;
+      button.disabled = true;
+      if (button === triggerButton) button.textContent = mode === "draft" ? "保存中..." : "提交中...";
+      return;
+    }
+    button.disabled = false;
+    if (button.dataset.originalText) {
+      button.textContent = button.dataset.originalText;
+      delete button.dataset.originalText;
+    }
+  });
 }
 
 async function createCharacter() {
@@ -2542,6 +2636,19 @@ async function deleteAction(actionId, actionTitle) {
   if (error) alert(error.message);
   else {
     await recordActivity("delete_action", "actions", actionId, { title: actionTitle });
+    await loadAll();
+  }
+}
+
+async function deleteDuplicateActions(actionIds, actionTitle) {
+  if (state.profile.role !== "dm") return;
+  const ids = String(actionIds ?? "").split(",").filter(Boolean);
+  if (!ids.length) return;
+  if (!confirm(`确定删除行动“${actionTitle || "未命名行动"}”的 ${ids.length} 条重复项吗？`)) return;
+  const { error } = await supabase.from("actions").delete().in("id", ids);
+  if (error) alert(error.message);
+  else {
+    await recordActivity("delete_duplicate_actions", "actions", null, { title: actionTitle, count: ids.length });
     await loadAll();
   }
 }
