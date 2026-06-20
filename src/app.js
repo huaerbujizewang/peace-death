@@ -780,7 +780,7 @@ function overview() {
           ${metric("最大回合", state.data.state?.max_turns ?? 5)}
         </div>
         <div class="legitimacyLedger">
-          ${legitimacy.entries.map((entry) => `
+          ${legitimacy.entries.filter((entry) => !entry.hidden).map((entry) => `
             <div class="ledgerRow ${entry.value < 0 ? "negative" : entry.value > 0 ? "positive" : ""}">
               <span>${escapeHtml(entry.label)}</span>
               <strong>${formatSigned(entry.value)}%</strong>
@@ -3231,7 +3231,11 @@ function addRegimeLegitimacy(entries) {
     }
     const prestige = entityPrestige(holder);
     const value = perPoint ? prestige - 50 : Math.trunc((prestige - 50) / 5);
-    entries.push({ label: `${label}威望 ${prestige}`, value: roundTenth(value) });
+    entries.push({
+      label: `${label}威望 ${prestige}`,
+      value: roundTenth(value),
+      hidden: ["duke", "prime_minister"].includes(positionKey),
+    });
   };
 
   if (regime === "dual_monarchy") {
