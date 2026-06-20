@@ -877,7 +877,6 @@ function prestigeReferencePanel() {
   const primeMinister = positionHolder("prime_minister");
   const justiceMinister = positionHolder("justice_minister");
   const heads = [duke, primeMinister].filter(Boolean);
-  const reformThreshold = heads.length ? Math.max(...heads.map(entityPrestige)) : null;
   const justiceThreshold = justiceMinister ? entityPrestige(justiceMinister) : null;
   return `
     <div class="prestigeReference">
@@ -885,7 +884,7 @@ function prestigeReferencePanel() {
       <div class="ruleList">
         ${prestigeRule("对抗检定", "成功等级相同时，威望较高者获胜；威望也相同则受对抗方获胜。")}
         ${prestigeRule("50基准", "公爵、首相等关键职位的威望围绕50计算合法性；低于50会拖累政府合法性。")}
-        ${prestigeRule("部长强推改革", reformThreshold === null ? "当前缺少公爵/首相门槛；默认需要公爵或首相同意。" : `若未获公爵或首相同意，部长威望必须高于 ${reformThreshold}，并赢得与公爵/首相的威望对抗，才能推行改革。`)}
+        ${prestigeRule("部长强推改革", heads.length ? "若未获公爵或首相同意，部长威望必须高于公爵/首相，并赢得与公爵/首相的威望对抗，才能推行改革。" : "当前缺少公爵/首相门槛；默认需要公爵或首相同意。")}
         ${prestigeRule("搜查/逮捕争议", justiceThreshold === null ? "司法部长空缺时由DM裁量。" : `没有司法部允许时，需要赢得与司法部长威望 ${justiceThreshold} 的对抗。`)}
         ${prestigeRule("军事政变", "满足政变前置后，若发起者与公爵或首相不同阵营，需要与他们进行威望对抗。")}
       </div>
