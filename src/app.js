@@ -368,6 +368,7 @@ let presenceClientId = "";
 let editTrackingBound = false;
 let unsavedEdit = false;
 let actionSaveInFlight = false;
+let autoSubmittingDrafts = false;
 let loadAllGeneration = 0;
 let openDetailKeys = new Set();
 const CHARACTER_DRAFT_STORAGE_KEY = "peace_death_character_draft_v1";
@@ -545,6 +546,7 @@ async function loadAll({ background = false } = {}) {
     audits: auditRows,
   };
   unsavedEdit = false;
+  if (await autoSubmitEligibleDrafts()) return;
   render();
 }
 
@@ -1411,7 +1413,7 @@ function actionPanel() {
     <div class="grid two">
       <section class="panel">
           <div class="panelHeader"><h2>行动草稿</h2><span class="scorePill">草稿不限阶段</span></div>
-          <div class="notice">正式提交只在对应阶段开放；政府行动不公开必须填写理由，理由不合理由DM扣威望。</div>
+          <div class="notice">草稿会在对应阶段自动提交；也可以在行动记录里手动提交。政府行动不公开必须填写理由，理由不合理由DM扣威望。</div>
           <form id="action-form">
             <label>行动类型<select name="action_kind"><option value="private">私人行动</option><option value="government">政府行动</option></select></label>
             <label>执行者<select name="actor">${actors.map(([type, id, name]) => `<option value="${type}:${id}">${escapeHtml(name)}</option>`).join("")}</select></label>
@@ -1676,6 +1678,10 @@ function dmPanel() {
         <h2>待处理行动</h2>
         ${pendingActionStack()}
       </section>
+      <section class="panel wide">
+        <h2>草稿待提交</h2>
+        ${dmDraftActionStack()}
+      </section>
     </div>
   `;
 }
@@ -1741,6 +1747,16 @@ function pendingActionCard(group) {
         ${duplicateCount ? `<button class="ghostButton" data-delete-duplicate-actions="${escapeAttr(group.duplicateIds.join(","))}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除重复项</button>` : ""}
       </div>
     </article>
+  `;
+}
+
+function dmDraftActionStack() {
+  const drafts = state.data.actions.filter((action) => action.status === "draft");
+  if (!drafts.length) return `<div class="notice">暂无草稿。</div>`;
+  return `
+    <div class="actionStack">
+      ${drafts.map(actionCard).join("")}
+    </div>
   `;
 }
 
@@ -1914,6 +1930,8 @@ function activityLabel(action) {
     create_action: "创建行动",
     delete_action: "删除行动",
     delete_duplicate_actions: "删除重复行动",
+    submit_draft_action: "提交草稿",
+    auto_submit_draft_actions: "自动提交草稿",
     process_action: "处理行动",
     approve_action: "批准/驳回行动",
     create_character: "创建角色卡",
@@ -2033,6 +2051,9 @@ function bindTab() {
   });
   root.querySelectorAll("[data-delete-duplicate-actions]").forEach((button) => {
     button.addEventListener("click", () => deleteDuplicateActions(button.dataset.deleteDuplicateActions, button.dataset.actionTitle));
+  });
+  root.querySelectorAll("[data-submit-draft]").forEach((button) => {
+    button.addEventListener("click", () => submitDraftAction(button.dataset.submitDraft));
   });
 
   root.querySelectorAll("[data-approve]").forEach((button) => {
@@ -2344,8 +2365,8 @@ async function saveAction(mode, triggerButton) {
       alert("政府行动不公开必须填写理由。");
       return;
     }
-    const needsApproval = actionKind === "government" && !isGovernmentHead();
-    const status = mode === "draft" ? "draft" : needsApproval ? "needs_approval" : "submitted";
+    const needsApproval = actionKind === "government" && !isGovernmentHeadForOwner(state.profile.id);
+    const status = mode === "draft" ? "draft" : submittedStatusForAction({ action_kind: actionKind, owner_id: state.profile.id });
     const { error } = await supabase.from("actions").insert({
       owner_id: state.profile.id,
       turn_number: state.data.state?.current_turn ?? 1,
@@ -2391,6 +2412,91 @@ function setActionSaveBusy(busy, triggerButton, mode) {
       delete button.dataset.originalText;
     }
   });
+}
+
+async function autoSubmitEligibleDrafts() {
+  if (autoSubmittingDrafts || !isPlayer() || !state.data.state) return false;
+  const drafts = state.data.actions.filter((action) =>
+    action.status === "draft" &&
+    action.owner_id === state.profile.id &&
+    actionExpectedPhase(action) === state.data.state.current_phase &&
+    !draftSubmissionError(action)
+  );
+  if (!drafts.length) return false;
+  autoSubmittingDrafts = true;
+  try {
+    const results = await Promise.all(drafts.map((action) =>
+      supabase
+        .from("actions")
+        .update({
+          status: submittedStatusForAction(action),
+          requires_approval: action.action_kind === "government" && !isGovernmentHeadForOwner(action.owner_id),
+        })
+        .eq("id", action.id)
+        .eq("owner_id", state.profile.id)
+        .eq("status", "draft")
+    ));
+    const error = results.find((result) => result.error)?.error;
+    if (error) {
+      state.error = error.message;
+      render();
+      return true;
+    }
+    await recordActivity("auto_submit_draft_actions", "actions", null, { count: drafts.length });
+    await loadAll();
+    return true;
+  } finally {
+    autoSubmittingDrafts = false;
+  }
+}
+
+async function submitDraftAction(actionId) {
+  const action = state.data.actions.find((item) => item.id === actionId);
+  if (!action || !canSubmitDraftAction(action)) return;
+  const errorMessage = draftSubmissionError(action);
+  if (errorMessage) {
+    alert(errorMessage);
+    return;
+  }
+  const { error } = await supabase
+    .from("actions")
+    .update({
+      status: submittedStatusForAction(action),
+      requires_approval: action.action_kind === "government" && !isGovernmentHeadForOwner(action.owner_id),
+    })
+    .eq("id", action.id)
+    .eq("status", "draft");
+  if (error) alert(error.message);
+  else {
+    await recordActivity("submit_draft_action", "actions", action.id, {
+      title: action.title ?? "",
+      status: statusLabel(submittedStatusForAction(action)),
+    });
+    await loadAll();
+  }
+}
+
+function canSubmitDraftAction(action) {
+  if (action.status !== "draft") return false;
+  if (isDm()) return true;
+  if (!isPlayer() || action.owner_id !== state.profile.id) return false;
+  return actionExpectedPhase(action) === state.data.state?.current_phase;
+}
+
+function actionExpectedPhase(action) {
+  return action.action_kind === "private" ? "private_submission" : "government_submission";
+}
+
+function submittedStatusForAction(action) {
+  if (action.action_kind !== "government") return "submitted";
+  return isGovernmentHeadForOwner(action.owner_id) ? "submitted" : "needs_approval";
+}
+
+function draftSubmissionError(action) {
+  if (action.action_kind === "government" && action.visibility !== "public" && !String(action.non_public_reason ?? "").trim()) {
+    return "政府行动不公开必须填写理由。";
+  }
+  return "";
 }
 
 async function createCharacter() {
@@ -3237,11 +3343,16 @@ function tagBlock(title, items = []) {
 function actionCard(action) {
   const canSeePrivate = canObserve() || action.owner_id === state.profile.id;
   const privateLabel = canObserve() ? "私密结果（DM/OB可见）" : "私密结果（仅DM和本人可见）";
+  const submitButton = canSubmitDraftAction(action)
+    ? `<button class="primaryButton" data-submit-draft="${action.id}" type="button">${isDm() && action.owner_id !== state.profile.id ? "代提交草稿" : "提交草稿"}</button>`
+    : "";
+  const deleteButton = isDm() ? `<button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>` : "";
+  const observerMeta = canObserve() ? `<span>提交者：${escapeHtml(actionOwnerLabel(action))} · 执行者：${escapeHtml(actionActorLabel(action))}</span>` : "";
   return `
     <article class="actionCard">
       <div class="actionHeader">
-        <div><strong>${escapeHtml(action.title || "未命名行动")}</strong><span>${statusLabel(action.status)} · 第${action.turn_number}回合 · ${action.action_kind === "government" ? (action.visibility === "public" ? "公开政府行动" : "不公开政府行动") : "私人行动"}</span></div>
-        ${isDm() ? `<button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>` : ""}
+        <div><strong>${escapeHtml(action.title || "未命名行动")}</strong><span>${statusLabel(action.status)} · 第${action.turn_number}回合 · ${action.action_kind === "government" ? (action.visibility === "public" ? "公开政府行动" : "不公开政府行动") : "私人行动"}</span>${observerMeta}</div>
+        ${submitButton || deleteButton ? `<div class="buttonRow">${submitButton}${deleteButton}</div>` : ""}
       </div>
       <p>${escapeHtml(action.description)}</p>
       ${action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
@@ -3436,7 +3547,11 @@ function formatSigned(value) {
 }
 
 function isGovernmentHead() {
-  const ownCharacters = new Set(state.data.characters.filter((c) => c.owner_id === state.profile.id).map((c) => c.id));
+  return isGovernmentHeadForOwner(state.profile.id);
+}
+
+function isGovernmentHeadForOwner(ownerId) {
+  const ownCharacters = new Set(state.data.characters.filter((c) => c.owner_id === ownerId).map((c) => c.id));
   const ownRetainers = new Set(state.data.retainers.filter((r) => ownCharacters.has(r.character_id)).map((r) => r.id));
   return state.data.assignments.some((a) => {
     const key = a.positions?.key;
