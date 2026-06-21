@@ -363,8 +363,8 @@ const SCANDALS = [
 ];
 
 let supabase = null;
-let presenceTimer = null;
 let presenceClientId = "";
+let presenceUpdateInFlight = false;
 let editTrackingBound = false;
 let unsavedEdit = false;
 let actionSaveInFlight = false;
@@ -433,17 +433,11 @@ async function boot() {
 }
 
 function startAutoRefresh() {
-  if (presenceTimer) return;
-  presenceTimer = window.setInterval(() => {
-    if (state.session && document.visibilityState === "visible") touchPresence(true);
-  }, 15000);
+  // No periodic polling: Supabase presence calls can interrupt long DM edits.
 }
 
 function stopAutoRefresh() {
-  if (presenceTimer) {
-    window.clearInterval(presenceTimer);
-    presenceTimer = null;
-  }
+  presenceUpdateInFlight = false;
 }
 
 function emptyData() {
@@ -650,6 +644,8 @@ function renderLogin() {
 
 async function touchPresence(online) {
   if (!supabase || !state.session) return;
+  if (presenceUpdateInFlight) return;
+  presenceUpdateInFlight = true;
   try {
     await supabase.rpc("touch_presence", {
       presence_online: Boolean(online),
@@ -659,6 +655,8 @@ async function touchPresence(online) {
     });
   } catch (error) {
     console.warn("presence update failed", error);
+  } finally {
+    presenceUpdateInFlight = false;
   }
 }
 
