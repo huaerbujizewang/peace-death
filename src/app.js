@@ -1960,6 +1960,7 @@ function activityLabel(action) {
     submit_draft_action: "提交草稿",
     auto_submit_draft_actions: "自动提交草稿",
     process_action: "处理行动",
+    reopen_action: "撤回处理",
     approve_action: "批准/驳回行动",
     create_character: "创建角色卡",
     update_character: "修改角色卡",
@@ -2123,6 +2124,9 @@ function bindTab() {
   root.querySelector('[data-action="add-custom-scandal"]')?.addEventListener("click", addCustomScandal);
   root.querySelectorAll("[data-process-action]").forEach((button) => {
     button.addEventListener("click", () => processAction(button.dataset.processAction));
+  });
+  root.querySelectorAll("[data-reopen-action]").forEach((button) => {
+    button.addEventListener("click", () => reopenAction(button.dataset.reopenAction));
   });
 }
 
@@ -3293,6 +3297,14 @@ async function processAction(id) {
   if (!action || !isDm()) return;
   const resultPublic = action.action_kind === "private" ? "" : resultTextareaValue("public", id);
   const resultPrivate = resultTextareaValue("private", id);
+  if (action.action_kind === "private" && !resultPrivate) {
+    alert("私人行动必须填写结果；不处理就先留在待处理行动里。");
+    return;
+  }
+  if (action.action_kind === "government" && !resultPublic && !resultPrivate) {
+    alert("政府行动请至少填写公开结果或私密结果；不处理就先留在待处理行动里。");
+    return;
+  }
   const { error } = await supabase
     .from("actions")
     .update({ status: "processed", result_public: resultPublic, result_private: resultPrivate, processed_at: new Date().toISOString() })
@@ -3300,6 +3312,22 @@ async function processAction(id) {
   if (error) alert(error.message);
   else {
     await recordActivity("process_action", "actions", id, { title: action?.title ?? "" });
+    loadAll();
+  }
+}
+
+async function reopenAction(id) {
+  const action = state.data.actions.find((item) => item.id === id);
+  if (!action || !isDm() || action.status !== "processed") return;
+  const nextStatus = action.action_kind === "government" && action.requires_approval ? "approved" : "submitted";
+  if (!confirm(`确定撤回行动“${action.title || "未命名行动"}”的处理结果，恢复为${statusLabel(nextStatus)}吗？`)) return;
+  const { error } = await supabase
+    .from("actions")
+    .update({ status: nextStatus, processed_at: null })
+    .eq("id", id);
+  if (error) alert(error.message);
+  else {
+    await recordActivity("reopen_action", "actions", id, { title: action.title ?? "", status: statusLabel(nextStatus) });
     loadAll();
   }
 }
@@ -3395,19 +3423,24 @@ function actionCard(action) {
   const submitButton = canSubmitDraftAction(action)
     ? `<button class="primaryButton" data-submit-draft="${action.id}" type="button">${isDm() && action.owner_id !== state.profile.id ? "代提交草稿" : "提交草稿"}</button>`
     : "";
+  const reopenButton = canReopenAction(action) ? `<button class="ghostButton" data-reopen-action="${action.id}" type="button">撤回处理</button>` : "";
   const deleteButton = isDm() ? `<button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>` : "";
   const observerMeta = canObserve() ? `<span>提交者：${escapeHtml(actionOwnerLabel(action))} · 执行者：${escapeHtml(actionActorLabel(action))}</span>` : "";
   return `
     <article class="actionCard">
       <div class="actionHeader">
         <div><strong>${escapeHtml(action.title || "未命名行动")}</strong><span>${statusLabel(action.status)} · 第${action.turn_number}回合 · ${action.action_kind === "government" ? (action.visibility === "public" ? "公开政府行动" : "不公开政府行动") : "私人行动"}</span>${observerMeta}</div>
-        ${submitButton || deleteButton ? `<div class="buttonRow">${submitButton}${deleteButton}</div>` : ""}
+        ${submitButton || reopenButton || deleteButton ? `<div class="buttonRow">${submitButton}${reopenButton}${deleteButton}</div>` : ""}
       </div>
       <p>${escapeHtml(action.description)}</p>
       ${!isPrivateAction && action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
       ${canSeePrivate && action.result_private ? `<div class="resultBox private"><strong>${privateLabel}</strong><span>${escapeHtml(action.result_private)}</span></div>` : ""}
     </article>
   `;
+}
+
+function canReopenAction(action) {
+  return isDm() && action.status === "processed";
 }
 
 function positionList() {
