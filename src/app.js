@@ -1191,7 +1191,7 @@ function characterPanel() {
             <h3>公开信息</h3>
             <p class="story">${escapeHtml(character.public_background || "暂无公开背景。")}</p>
             ${tagBlock("公开特质", character.public_traits)}
-            ${stats ? `<h3>私密信息</h3>${statGrid(stats)}${tagBlock("秘密特质", stats.secret_traits)}${tagBlock("人生追求", [stats.pursuit].filter(Boolean))}${tagBlock("黑料", scandalLabels(stats.scandals))}` : ""}
+            ${stats ? `<h3>私密信息</h3>${statGrid(stats)}${skillGrid(stats)}${tagBlock("秘密特质", stats.secret_traits)}${tagBlock("人生追求", [stats.pursuit].filter(Boolean))}${tagBlock("黑料", scandalLabels(stats.scandals))}` : ""}
             ${canSeeRetainers ? `
               <h3>亲信</h3>
               <div class="retainerGrid">
@@ -3333,6 +3333,21 @@ function metric(label, value) {
 function statGrid(stats) {
   const labels = { body: "体质", willpower: "意志", wealth: "财富", charm: "魅力", intellect: "智力", prestige: "威望", perception: "感知", luck: "幸运" };
   return `<div class="statGrid compact">${Object.entries(labels).map(([key, label]) => metric(label, stats[key])).join("")}</div>`;
+}
+
+function skillGrid(stats) {
+  const skills = typeof stats.skills === "object" && stats.skills ? stats.skills : {};
+  const skillNames = Array.from(new Set(["谈判", "演讲", "写作", "法律", "会计", ...Object.keys(skills)]));
+  const skillValues = skillNames.map((name) => Number(skills[name] ?? 10));
+  const spent = skillValues.reduce((total, value) => total + Math.max(0, value - 10), 0);
+  const budget = Number(stats.intellect ?? 0) * 2;
+  return `
+    <div class="privateBlockHeader">
+      <span>技能</span>
+      <b>已用 ${spent} / ${budget}，剩余 ${budget - spent}</b>
+    </div>
+    <div class="statGrid compact">${skillNames.map((name, index) => metric(name, skillValues[index])).join("")}</div>
+  `;
 }
 
 function tagBlock(title, items = []) {
