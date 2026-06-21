@@ -403,6 +403,20 @@ h3 {
   grid-template-columns: repeat(4, minmax(80px, 1fr));
 }
 
+.privateBlockHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0 8px;
+  color: #4c535a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.privateBlockHeader b {
+  color: #1f6b45;
+}
+
 .statInputGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(90px, 1fr));
