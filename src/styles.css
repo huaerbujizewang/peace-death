@@ -1207,6 +1207,23 @@ textarea {
   white-space: pre-wrap;
 }
 
+.processBox {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #d8d1c7;
+  border-radius: 6px;
+  background: #f4f1eb;
+}
+
+.processBox textarea {
+  min-height: 120px;
+}
+
+.processBox button {
+  justify-self: start;
+}
+
 .inlineForm {
   margin-bottom: 14px;
 }

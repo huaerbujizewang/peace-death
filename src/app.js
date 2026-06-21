@@ -525,7 +525,9 @@ async function loadAll({ background = false } = {}) {
     auditRows = audits.data ?? [];
   }
   const privateResultsByAction = new Map((privateActionResults.data ?? []).map((item) => [item.action_id, item.result_private]));
-  const visibleActions = (actions.data ?? []).map((action) => ({ ...action, result_private: privateResultsByAction.get(action.id) ?? "" }));
+  const visibleActions = (actions.data ?? [])
+    .filter(actionVisibleToCurrentUser)
+    .map((action) => ({ ...action, result_private: privateResultsByAction.get(action.id) ?? "" }));
   if (shouldDiscardLoadResult(generation, background)) return;
   state.data = {
     state: gameState.data,
@@ -720,6 +722,13 @@ function isObserver() {
 
 function canObserve() {
   return ["dm", "observer"].includes(state.profile?.role);
+}
+
+function actionVisibleToCurrentUser(action) {
+  if (isDm() || action.owner_id === state.profile?.id) return true;
+  if (action.action_kind === "private") return false;
+  if (isObserver()) return action.status !== "draft";
+  return true;
 }
 
 function phaseStrip() {
@@ -1741,12 +1750,30 @@ function pendingActionCard(group) {
         </div>
       </div>
       <p>${escapeHtml(action.description)}</p>
+      ${processActionForm(action)}
       <div class="buttonRow">
-        <button class="primaryButton" data-process="${action.id}">填写结果并处理</button>
         <button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>
         ${duplicateCount ? `<button class="ghostButton" data-delete-duplicate-actions="${escapeAttr(group.duplicateIds.join(","))}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除重复项</button>` : ""}
       </div>
     </article>
+  `;
+}
+
+function processActionForm(action) {
+  if (action.action_kind === "private") {
+    return `
+      <div class="processBox">
+        <label>结果（仅DM和本人可见）<textarea data-result-private="${action.id}" rows="6">${escapeHtml(action.result_private ?? "")}</textarea></label>
+        <button class="primaryButton" data-process-action="${action.id}" type="button">保存结果并处理</button>
+      </div>
+    `;
+  }
+  return `
+    <div class="processBox">
+      <label>公开结果<textarea data-result-public="${action.id}" rows="5">${escapeHtml(action.result_public ?? "")}</textarea></label>
+      <label>私密结果（仅DM和提交者可见）<textarea data-result-private="${action.id}" rows="5">${escapeHtml(action.result_private ?? "")}</textarea></label>
+      <button class="primaryButton" data-process-action="${action.id}" type="button">保存结果并处理</button>
+    </div>
   `;
 }
 
@@ -2094,8 +2121,8 @@ function bindTab() {
   root.querySelector('[data-action="draw-scandal"]')?.addEventListener("click", addRandomScandal);
   root.querySelector('[data-action="add-scandal"]')?.addEventListener("click", addSelectedScandal);
   root.querySelector('[data-action="add-custom-scandal"]')?.addEventListener("click", addCustomScandal);
-  root.querySelectorAll("[data-process]").forEach((button) => {
-    button.addEventListener("click", () => processAction(button.dataset.process));
+  root.querySelectorAll("[data-process-action]").forEach((button) => {
+    button.addEventListener("click", () => processAction(button.dataset.processAction));
   });
 }
 
@@ -3263,8 +3290,9 @@ function normalizeVoteValues(values, seats, changedField) {
 
 async function processAction(id) {
   const action = state.data.actions.find((item) => item.id === id);
-  const resultPublic = prompt("公开结果", action?.result_public ?? "") ?? "";
-  const resultPrivate = prompt("私密结果", action?.result_private ?? "") ?? "";
+  if (!action || !isDm()) return;
+  const resultPublic = action.action_kind === "private" ? "" : resultTextareaValue("public", id);
+  const resultPrivate = resultTextareaValue("private", id);
   const { error } = await supabase
     .from("actions")
     .update({ status: "processed", result_public: resultPublic, result_private: resultPrivate, processed_at: new Date().toISOString() })
@@ -3274,6 +3302,11 @@ async function processAction(id) {
     await recordActivity("process_action", "actions", id, { title: action?.title ?? "" });
     loadAll();
   }
+}
+
+function resultTextareaValue(kind, actionId) {
+  const textarea = Array.from(root.querySelectorAll(`[data-result-${kind}]`)).find((item) => item.dataset[`result${kind[0].toUpperCase()}${kind.slice(1)}`] === actionId);
+  return textarea?.value.trim() ?? "";
 }
 
 async function addRandomScandal() {
@@ -3356,8 +3389,9 @@ function tagBlock(title, items = []) {
 }
 
 function actionCard(action) {
-  const canSeePrivate = canObserve() || action.owner_id === state.profile.id;
-  const privateLabel = canObserve() ? "私密结果（DM/OB可见）" : "私密结果（仅DM和本人可见）";
+  const canSeePrivate = isDm() || action.owner_id === state.profile.id;
+  const isPrivateAction = action.action_kind === "private";
+  const privateLabel = isPrivateAction ? "结果（仅DM和本人可见）" : "私密结果（仅DM和提交者可见）";
   const submitButton = canSubmitDraftAction(action)
     ? `<button class="primaryButton" data-submit-draft="${action.id}" type="button">${isDm() && action.owner_id !== state.profile.id ? "代提交草稿" : "提交草稿"}</button>`
     : "";
@@ -3370,7 +3404,7 @@ function actionCard(action) {
         ${submitButton || deleteButton ? `<div class="buttonRow">${submitButton}${deleteButton}</div>` : ""}
       </div>
       <p>${escapeHtml(action.description)}</p>
-      ${action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
+      ${!isPrivateAction && action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
       ${canSeePrivate && action.result_private ? `<div class="resultBox private"><strong>${privateLabel}</strong><span>${escapeHtml(action.result_private)}</span></div>` : ""}
     </article>
   `;
