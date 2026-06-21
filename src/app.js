@@ -1682,8 +1682,11 @@ function dmPanel() {
 
 function pendingActionStack() {
   const groups = groupedPendingActions();
-  if (!groups.length) return `<div class="notice">暂无待处理行动。</div>`;
+  const draftCount = state.data.actions.filter((a) => a.status === "draft").length;
+  const draftNotice = draftCount ? `<div class="notice">${draftCount} 条草稿尚未提交，不会进入待处理行动。</div>` : "";
+  if (!groups.length) return `${draftNotice}<div class="notice">暂无待处理行动。</div>`;
   return `
+    ${draftNotice}
     <div class="actionStack">
       ${groups.map(pendingActionCard).join("")}
     </div>
