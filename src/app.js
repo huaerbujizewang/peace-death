@@ -1463,7 +1463,7 @@ function governmentPanel() {
             <article class="actionCard">
               <strong>${escapeHtml(a.title)}</strong>
               <span>${statusLabel(a.status)} · ${a.non_public_reason ? `不公开理由：${escapeHtml(a.non_public_reason)}` : "公开行动"}</span>
-              <p>${escapeHtml(a.description)}</p>
+              ${actionDetailGrid(a)}
               ${canApprove ? `<div class="buttonRow"><button class="primaryButton" data-approve="${a.id}" data-status="approved">${a.status === "rejected" ? "撤销否决并批准" : "批准"}</button>${a.status === "needs_approval" ? `<button class="ghostButton" data-approve="${a.id}" data-status="rejected">驳回</button>` : ""}</div>` : ""}
             </article>
           `).join("")}
@@ -1752,7 +1752,7 @@ function pendingActionCard(group) {
           <span>提交者：${escapeHtml(actionOwnerLabel(action))} · 执行者：${escapeHtml(actionActorLabel(action))}</span>
         </div>
       </div>
-      <p>${escapeHtml(action.description)}</p>
+      ${actionDetailGrid(action)}
       ${processActionForm(action)}
       <div class="buttonRow">
         <button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>
@@ -1804,6 +1804,28 @@ function actionActorLabel(action) {
     return state.data.retainers.find((item) => item.id === action.actor_id)?.name ?? "未知亲信";
   }
   return "未指定";
+}
+
+function actionDetailGrid(action) {
+  const details = [
+    ["行动类型", action.action_kind === "private" ? "私人行动" : "政府行动"],
+    ["执行者", actionActorLabel(action)],
+    ["标题", action.title],
+    ["分类", action.category],
+    ["目标", action.target],
+    ["描述", action.description, "wide"],
+    ["使用资源 / 特质 / 备注", action.resources, "wide"],
+  ];
+  return `
+    <div class="actionDetailGrid">
+      ${details.map(([label, value, wide]) => `
+        <div class="actionDetailItem ${wide ? "wide" : ""}">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(String(value ?? "").trim() || "未填写")}</strong>
+        </div>
+      `).join("")}
+    </div>
+  `;
 }
 
 function dmSupporterEditor() {
@@ -1859,7 +1881,7 @@ function dmApprovalStack() {
         <article class="actionCard">
           <strong>${escapeHtml(action.title || "未命名行动")}</strong>
           <span>${statusLabel(action.status)} · ${action.non_public_reason ? `不公开理由：${escapeHtml(action.non_public_reason)}` : "公开行动"}</span>
-          <p>${escapeHtml(action.description)}</p>
+          ${actionDetailGrid(action)}
           <div class="buttonRow">
             <button class="primaryButton" data-approve="${action.id}" data-status="approved">${action.status === "rejected" ? "撤销否决并批准" : "批准"}</button>
             ${action.status === "needs_approval" ? `<button class="ghostButton" data-approve="${action.id}" data-status="rejected">驳回</button>` : ""}
@@ -3496,7 +3518,7 @@ function actionCard(action) {
         <div><strong>${escapeHtml(action.title || "未命名行动")}</strong><span>${statusLabel(action.status)} · 第${action.turn_number}回合 · ${action.action_kind === "government" ? (action.visibility === "public" ? "公开政府行动" : "不公开政府行动") : "私人行动"}</span>${observerMeta}</div>
         ${submitButton || reopenButton || deleteButton ? `<div class="buttonRow">${submitButton}${reopenButton}${deleteButton}</div>` : ""}
       </div>
-      <p>${escapeHtml(action.description)}</p>
+      ${actionDetailGrid(action)}
       ${!isPrivateAction && action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
       ${canSeePrivate && action.result_private ? `<div class="resultBox private"><strong>${privateLabel}</strong><span>${escapeHtml(action.result_private)}</span></div>` : ""}
     </article>
