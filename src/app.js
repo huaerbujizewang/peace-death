@@ -1450,8 +1450,8 @@ function actionPanel() {
 }
 
 function governmentPanel() {
-  const canApprove = isPlayer() && isGovernmentHead();
-  const approvals = state.data.actions.filter((a) => a.status === "needs_approval");
+  const canApprove = isDm() || (isPlayer() && isGovernmentHead());
+  const approvals = state.data.actions.filter((a) => a.status === "needs_approval" || (isDm() && a.status === "rejected" && a.action_kind === "government"));
   return `
     <div class="grid two">
       <section class="panel"><h2>政府职位</h2>${positionList()}</section>
@@ -1462,9 +1462,9 @@ function governmentPanel() {
           ${approvals.map((a) => `
             <article class="actionCard">
               <strong>${escapeHtml(a.title)}</strong>
-              <span>${a.non_public_reason ? `不公开理由：${escapeHtml(a.non_public_reason)}` : "公开行动"}</span>
+              <span>${statusLabel(a.status)} · ${a.non_public_reason ? `不公开理由：${escapeHtml(a.non_public_reason)}` : "公开行动"}</span>
               <p>${escapeHtml(a.description)}</p>
-              ${canApprove ? `<div class="buttonRow"><button class="primaryButton" data-approve="${a.id}" data-status="approved">批准</button><button class="ghostButton" data-approve="${a.id}" data-status="rejected">驳回</button></div>` : ""}
+              ${canApprove ? `<div class="buttonRow"><button class="primaryButton" data-approve="${a.id}" data-status="approved">${a.status === "rejected" ? "撤销否决并批准" : "批准"}</button>${a.status === "needs_approval" ? `<button class="ghostButton" data-approve="${a.id}" data-status="rejected">驳回</button>` : ""}</div>` : ""}
             </article>
           `).join("")}
         </div>
@@ -1656,6 +1656,7 @@ function dmPanel() {
           `).join("")}
         </div>
         ${dmSupporterEditor()}
+        ${dmFactionInfluenceEditor()}
         <button class="ghostButton" data-action="save-state">保存国家修正</button>
       </section>
       <section class="panel">
@@ -1680,6 +1681,10 @@ function dmPanel() {
           <button class="primaryButton" data-action="assign-position">任命</button>
         </div>
         ${positionList()}
+      </section>
+      <section class="panel">
+        <h2>改革审批</h2>
+        ${dmApprovalStack()}
       </section>
       <section class="panel wide">
         <h2>待处理行动</h2>
@@ -1826,6 +1831,45 @@ function dmSupporterEditor() {
   `;
 }
 
+function dmFactionInfluenceEditor() {
+  const factions = sortedPoliticalFactions();
+  const total = factions.reduce((sum, faction) => sum + Number(faction.influence ?? 0), 0);
+  return `
+    <h3>派系影响力</h3>
+    <div class="moodEditor">
+      ${factions.map((faction) => `
+        <label>
+          <span>${escapeHtml(faction.short_name)}</span>
+          <input data-faction-influence="${faction.id}" type="number" min="0" max="100" step="1" value="${Number(faction.influence ?? 0)}">
+          <small>${Math.round(Number(faction.influence ?? 0))}席</small>
+        </label>
+      `).join("")}
+    </div>
+    <div class="notice">当前合计 ${roundTenth(total)}%；议会按影响力四舍五入生成席位。</div>
+    <button class="ghostButton" data-action="save-faction-influence" type="button">保存派系影响力</button>
+  `;
+}
+
+function dmApprovalStack() {
+  const approvals = state.data.actions.filter((action) => action.action_kind === "government" && ["needs_approval", "rejected"].includes(action.status));
+  if (!approvals.length) return `<div class="notice">暂无待审批或已否决改革。</div>`;
+  return `
+    <div class="actionStack">
+      ${approvals.map((action) => `
+        <article class="actionCard">
+          <strong>${escapeHtml(action.title || "未命名行动")}</strong>
+          <span>${statusLabel(action.status)} · ${action.non_public_reason ? `不公开理由：${escapeHtml(action.non_public_reason)}` : "公开行动"}</span>
+          <p>${escapeHtml(action.description)}</p>
+          <div class="buttonRow">
+            <button class="primaryButton" data-approve="${action.id}" data-status="approved">${action.status === "rejected" ? "撤销否决并批准" : "批准"}</button>
+            ${action.status === "needs_approval" ? `<button class="ghostButton" data-approve="${action.id}" data-status="rejected">驳回</button>` : ""}
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
 function dmPlayerMonitor() {
   const presenceByProfile = latestPresenceByProfile();
   const players = state.data.profiles.filter((profile) => profile.role === "player");
@@ -1968,6 +2012,7 @@ function activityLabel(action) {
     save_phase: "修改回合/阶段",
     reset_turn: "重置回合",
     save_state: "修改国家状态",
+    update_faction_influence: "修改派系影响力",
     change_policy: "修改政策",
     assign_position: "任命职位",
     unassign_position: "撤任职位",
@@ -2113,6 +2158,7 @@ function bindTab() {
   root.querySelector('[data-action="reset-turn"]')?.addEventListener("click", resetTurn);
   root.querySelector('[data-action="save-state"]')?.addEventListener("click", saveState);
   root.querySelector('[data-action="save-supporters"]')?.addEventListener("click", saveSupporters);
+  root.querySelector('[data-action="save-faction-influence"]')?.addEventListener("click", saveFactionInfluence);
   root.querySelector('[data-action="assign-position"]')?.addEventListener("click", assignPosition);
   root.querySelectorAll("[data-unassign-position]").forEach((button) => {
     button.addEventListener("click", () => unassignPosition(button.dataset.unassignPosition, button.dataset.assignmentName));
@@ -3151,6 +3197,10 @@ function clampPatience(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 }
 
+function clampInfluence(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+
 async function assignPosition() {
   const [entityType, entityId] = document.getElementById("assign-entity").value.split(":");
   const positionId = document.getElementById("assign-position").value;
@@ -3182,6 +3232,22 @@ async function saveSupporters() {
     return;
   }
   await recordActivity("update_supporters", "factions");
+  loadAll();
+}
+
+async function saveFactionInfluence() {
+  const inputs = Array.from(root.querySelectorAll("[data-faction-influence]"));
+  const updates = inputs.map((input) =>
+    supabase.from("factions").update({ influence: clampInfluence(input.value) }).eq("id", input.dataset.factionInfluence)
+  );
+  const results = await Promise.all(updates);
+  const error = results.find((result) => result.error)?.error;
+  if (error) {
+    alert(error.message);
+    return;
+  }
+  const total = inputs.reduce((sum, input) => sum + clampInfluence(input.value), 0);
+  await recordActivity("update_faction_influence", "factions", null, { total });
   loadAll();
 }
 
