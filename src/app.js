@@ -322,6 +322,7 @@ const POLICY_LEGITIMACY = {
 };
 
 const BUDGET_LEVELS = ["耗尽", "缺乏", "平衡", "盈余", "充沛"];
+const ECONOMY_LEVELS = ["经济崩溃", "经济衰退", "一切如常", "经济增长", "经济繁荣"];
 
 const SCANDALS = [
   ["罪大恶极", "你和亲妈有奸情。"],
@@ -1642,7 +1643,7 @@ function dmPanel() {
         </div>
         <button class="ghostButton" data-action="save-phase">保存回合/阶段</button>
         <label>合法性DM修正<input id="legitimacy-modifier" type="number" value="${state.data.state?.legitimacy_modifier ?? 0}"></label>
-        <label>经济形势<input id="economy-status" value="${escapeAttr(state.data.state?.economy_status ?? "一切如常")}"></label>
+        <label>经济形势<select id="economy-status">${economyOptions(state.data.state?.economy_status)}</select></label>
         <label>国家预算<select id="budget-status">${BUDGET_LEVELS.map((status) => `<option ${status === state.data.state?.budget_status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
         ${foreignPowerEditor()}
         <h3>社会群体满意度</h3>
@@ -1960,6 +1961,11 @@ function foreignPowerEditor() {
       `).join("") || `<div class="notice">还没有大国耐心数据，请检查 foreign_powers 初始化。</div>`}
     </div>
   `;
+}
+
+function economyOptions(currentStatus) {
+  const selected = ECONOMY_LEVELS.includes(currentStatus) ? currentStatus : "一切如常";
+  return ECONOMY_LEVELS.map((status) => `<option value="${escapeAttr(status)}" ${status === selected ? "selected" : ""}>${escapeHtml(status)}</option>`).join("");
 }
 
 function observerPresenceCards(observers, sessions) {
@@ -3114,7 +3120,7 @@ async function resetTurn() {
 
 async function saveState() {
   const legitimacyModifier = Number(document.getElementById("legitimacy-modifier")?.value ?? 0);
-  const economyStatus = document.getElementById("economy-status")?.value.trim() || "一切如常";
+  const economyStatus = normalizeEconomyStatus(document.getElementById("economy-status")?.value);
   const budgetStatus = document.getElementById("budget-status")?.value ?? state.data.state?.budget_status ?? "平衡";
   const stateUpdate = await supabase
     .from("game_state")
@@ -3217,6 +3223,11 @@ function clampMood(value) {
 
 function clampPatience(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+
+function normalizeEconomyStatus(value) {
+  const status = String(value ?? "").trim();
+  return ECONOMY_LEVELS.includes(status) ? status : "一切如常";
 }
 
 function clampInfluence(value) {
