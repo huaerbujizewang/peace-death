@@ -410,16 +410,19 @@ async function boot() {
     supabase = mod.createClient(CONFIG.url, CONFIG.anonKey);
     const { data } = await supabase.auth.getSession();
     state.session = data.session;
-    supabase.auth.onAuthStateChange((_event, session) => {
+    supabase.auth.onAuthStateChange((event, session) => {
+      const hadSession = Boolean(state.session);
       state.session = session;
       if (session) {
         startAutoRefresh();
-        loadAll();
+        if (event === "SIGNED_IN" || (!hadSession && !state.profile)) loadAll();
       }
       else {
         stopAutoRefresh();
-        state.profile = null;
-        render();
+        if (hadSession || state.profile) {
+          state.profile = null;
+          render();
+        }
       }
     });
     if (state.session) {
