@@ -3561,9 +3561,9 @@ function actionCard(action) {
   const isPrivateAction = action.action_kind === "private";
   const privateLabel = isPrivateAction ? "结果（仅DM和本人可见）" : "私密结果（仅DM和提交者可见）";
   const submitButton = canSubmitDraftAction(action)
-    ? `<button class="primaryButton" data-submit-draft="${action.id}" type="button">${isDm() && action.owner_id !== state.profile.id ? "代提交草稿" : "提交草稿"}</button>`
+    ? `<button class="ghostButton" data-submit-draft="${action.id}" type="button">${isDm() && action.owner_id !== state.profile.id ? "代提交草稿" : "提交草稿"}</button>`
     : "";
-  const editButton = canEditDraftAction(action) ? `<button class="ghostButton" data-edit-draft="${action.id}" type="button">编辑草稿</button>` : "";
+  const editButton = canEditDraftAction(action) ? `<button class="primaryButton" data-edit-draft="${action.id}" type="button">编辑草稿</button>` : "";
   const reopenButton = canReopenAction(action) ? `<button class="ghostButton" data-reopen-action="${action.id}" type="button">撤回处理</button>` : "";
   const deleteButton = isDm() ? `<button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>` : "";
   const observerMeta = canObserve() ? `<span>提交者：${escapeHtml(actionOwnerLabel(action))} · 执行者：${escapeHtml(actionActorLabel(action))}</span>` : "";
@@ -3571,7 +3571,7 @@ function actionCard(action) {
     <article class="actionCard">
       <div class="actionHeader">
         <div><strong>${escapeHtml(action.title || "未命名行动")}</strong><span>${statusLabel(action.status)} · 第${action.turn_number}回合 · ${action.action_kind === "government" ? (action.visibility === "public" ? "公开政府行动" : "不公开政府行动") : "私人行动"}</span>${observerMeta}</div>
-        ${submitButton || editButton || reopenButton || deleteButton ? `<div class="buttonRow">${submitButton}${editButton}${reopenButton}${deleteButton}</div>` : ""}
+        ${editButton || submitButton || reopenButton || deleteButton ? `<div class="buttonRow">${editButton}${submitButton}${reopenButton}${deleteButton}</div>` : ""}
       </div>
       ${actionDetailGrid(action)}
       ${!isPrivateAction && action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
