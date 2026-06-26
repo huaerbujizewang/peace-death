@@ -1,6 +1,6 @@
 const CONFIG = window.PEACE_DEATH_SUPABASE ?? {};
 const root = document.getElementById("root");
-
+//注释
 const PHASES = [
   ["turn_start", "回合开始"],
   ["private_submission", "玩家提交私人行动"],
