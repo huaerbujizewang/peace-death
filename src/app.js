@@ -381,6 +381,7 @@ let state = {
   profile: null,
   tab: "overview",
   selectedCountry: "karank",
+  editingActionId: "",
   error: "",
   data: emptyData(),
 };
@@ -1403,13 +1404,16 @@ function traitCheckbox(group, name, cost, req) {
 
 function actionPanel() {
   const readonly = !isPlayer() && !isDm();
-  const ownCharacters = state.data.characters.filter((c) => c.owner_id === state.profile.id);
+  const ownCharacters = state.data.characters.filter((c) => isDm() || c.owner_id === state.profile.id);
   const ownIds = new Set(ownCharacters.map((c) => c.id));
   const retainers = state.data.retainers.filter((r) => ownIds.has(r.character_id));
   const actors = [
     ...ownCharacters.map((c) => ["character", c.id, c.name]),
     ...retainers.map((r) => ["retainer", r.id, r.name]),
   ];
+  const editingAction = state.data.actions.find((action) => action.id === state.editingActionId && canEditDraftAction(action));
+  const editingActor = editingAction ? `${editingAction.actor_type}:${editingAction.actor_id}` : "";
+  const editingIsPublic = editingAction?.action_kind === "government" && editingAction.visibility === "public";
   const ownStats = state.data.privateStats.filter((s) => ownIds.has(s.character_id));
   const hasYouth = ownCharacters.some((c) => c.public_traits?.includes("年轻气盛")) || ownStats.some((s) => s.secret_traits?.includes("年轻气盛"));
   if (readonly) {
@@ -1423,25 +1427,26 @@ function actionPanel() {
   return `
     <div class="grid two">
       <section class="panel">
-          <div class="panelHeader"><h2>行动草稿</h2><span class="scorePill">草稿不限阶段</span></div>
+          <div class="panelHeader"><h2>${editingAction ? "编辑草稿" : "行动草稿"}</h2><span class="scorePill">${editingAction ? "正在修改已有草稿" : "草稿不限阶段"}</span></div>
           <div class="notice">草稿会在对应阶段自动提交；也可以在行动记录里手动提交。政府行动不公开必须填写理由，理由不合理由DM扣威望。</div>
           <form id="action-form">
-            <label>行动类型<select name="action_kind"><option value="private">私人行动</option><option value="government">政府行动</option></select></label>
-            <label>执行者<select name="actor">${actors.map(([type, id, name]) => `<option value="${type}:${id}">${escapeHtml(name)}</option>`).join("")}</select></label>
-            <label>标题<input name="title"></label>
+            <label>行动类型<select name="action_kind"><option value="private" ${editingAction?.action_kind === "private" ? "selected" : ""}>私人行动</option><option value="government" ${editingAction?.action_kind === "government" ? "selected" : ""}>政府行动</option></select></label>
+            <label>执行者<select name="actor">${actors.map(([type, id, name]) => `<option value="${type}:${id}" ${editingActor === `${type}:${id}` ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label>
+            <label>标题<input name="title" value="${escapeAttr(editingAction?.title ?? "")}"></label>
             <div class="formRow">
-              <label>分类<select name="category">${["外交", "情报", "经济", "宣传", "军事", "司法", "结党", "调查", "改革", "其他"].map((x) => `<option>${x}</option>`).join("")}</select></label>
-              <label>目标<input name="target"></label>
+              <label>分类<select name="category">${["外交", "情报", "经济", "宣传", "军事", "司法", "结党", "调查", "改革", "其他"].map((x) => `<option ${editingAction?.category === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+              <label>目标<input name="target" value="${escapeAttr(editingAction?.target ?? "")}"></label>
             </div>
-            <label>描述<textarea name="description"></textarea></label>
-            <label>使用资源 / 特质 / 备注<textarea name="resources"></textarea></label>
+            <label>描述<textarea name="description">${escapeHtml(editingAction?.description ?? "")}</textarea></label>
+            <label>使用资源 / 特质 / 备注<textarea name="resources">${escapeHtml(editingAction?.resources ?? "")}</textarea></label>
             <div class="toggleRow">
-              <label><input name="public_government" type="checkbox"> 政府行动公开完整内容</label>
+              <label><input name="public_government" type="checkbox" ${editingIsPublic ? "checked" : ""}> 政府行动公开完整内容</label>
             </div>
-            <label>不公开理由<input name="non_public_reason"></label>
+            <label>不公开理由<input name="non_public_reason" value="${escapeAttr(editingAction?.non_public_reason ?? "")}"></label>
             <div class="buttonRow">
-              <button class="ghostButton" type="button" data-action-save="draft">保存草稿</button>
-              <button class="primaryButton" type="button" data-action-save="submitted">提交</button>
+              <button class="ghostButton" type="button" data-action-save="draft">${editingAction ? "保存修改" : "保存草稿"}</button>
+              <button class="primaryButton" type="button" data-action-save="submitted">${editingAction ? "提交修改后的草稿" : "提交"}</button>
+              ${editingAction ? `<button class="ghostButton" type="button" data-action="cancel-action-edit">取消编辑</button>` : ""}
             </div>
           </form>
       </section>
@@ -2030,6 +2035,7 @@ function activityLabel(action) {
     create_action: "创建行动",
     delete_action: "删除行动",
     delete_duplicate_actions: "删除重复行动",
+    update_action_draft: "修改行动草稿",
     submit_draft_action: "提交草稿",
     auto_submit_draft_actions: "自动提交草稿",
     process_action: "处理行动",
@@ -2157,6 +2163,10 @@ function bindTab() {
   root.querySelectorAll("[data-submit-draft]").forEach((button) => {
     button.addEventListener("click", () => submitDraftAction(button.dataset.submitDraft));
   });
+  root.querySelectorAll("[data-edit-draft]").forEach((button) => {
+    button.addEventListener("click", () => editDraftAction(button.dataset.editDraft));
+  });
+  root.querySelector('[data-action="cancel-action-edit"]')?.addEventListener("click", cancelActionEdit);
 
   root.querySelectorAll("[data-approve]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -2471,11 +2481,11 @@ async function saveAction(mode, triggerButton) {
       alert("政府行动不公开必须填写理由。");
       return;
     }
-    const needsApproval = actionKind === "government" && !isGovernmentHeadForOwner(state.profile.id);
-    const status = mode === "draft" ? "draft" : submittedStatusForAction({ action_kind: actionKind, owner_id: state.profile.id });
-    const { error } = await supabase.from("actions").insert({
-      owner_id: state.profile.id,
-      turn_number: state.data.state?.current_turn ?? 1,
+    const editingAction = state.data.actions.find((action) => action.id === state.editingActionId && canEditDraftAction(action));
+    const actionOwnerId = editingAction?.owner_id ?? state.profile.id;
+    const needsApproval = actionKind === "government" && !isGovernmentHeadForOwner(actionOwnerId);
+    const status = mode === "draft" ? "draft" : submittedStatusForAction({ action_kind: actionKind, owner_id: actionOwnerId });
+    const patch = {
       action_kind: actionKind,
       actor_type: actorType,
       actor_id: actorId,
@@ -2488,14 +2498,23 @@ async function saveAction(mode, triggerButton) {
       non_public_reason: reason,
       requires_approval: needsApproval,
       status,
-    });
+    };
+    const saveRequest = editingAction
+      ? supabase.from("actions").update(patch).eq("id", editingAction.id).eq("status", "draft")
+      : supabase.from("actions").insert({
+          owner_id: state.profile.id,
+          turn_number: state.data.state?.current_turn ?? 1,
+          ...patch,
+        });
+    const { error } = await saveRequest;
     if (error) alert(error.message);
     else {
-      await recordActivity("create_action", "actions", null, {
+      await recordActivity(editingAction ? "update_action_draft" : "create_action", "actions", editingAction?.id ?? null, {
         title: String(data.get("title") ?? ""),
         status,
         kind: actionKind,
       });
+      state.editingActionId = "";
       await loadAll();
     }
   } finally {
@@ -2582,11 +2601,32 @@ async function submitDraftAction(actionId) {
   }
 }
 
+function editDraftAction(actionId) {
+  const action = state.data.actions.find((item) => item.id === actionId);
+  if (!action || !canEditDraftAction(action)) return;
+  state.editingActionId = action.id;
+  state.tab = "actions";
+  unsavedEdit = false;
+  render();
+  document.getElementById("action-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function cancelActionEdit() {
+  state.editingActionId = "";
+  unsavedEdit = false;
+  render();
+}
+
 function canSubmitDraftAction(action) {
   if (action.status !== "draft") return false;
   if (isDm()) return true;
   if (!isPlayer() || action.owner_id !== state.profile.id) return false;
   return actionExpectedPhase(action) === state.data.state?.current_phase;
+}
+
+function canEditDraftAction(action) {
+  if (action.status !== "draft") return false;
+  return isDm() || action.owner_id === state.profile.id;
 }
 
 function actionExpectedPhase(action) {
@@ -3523,6 +3563,7 @@ function actionCard(action) {
   const submitButton = canSubmitDraftAction(action)
     ? `<button class="primaryButton" data-submit-draft="${action.id}" type="button">${isDm() && action.owner_id !== state.profile.id ? "代提交草稿" : "提交草稿"}</button>`
     : "";
+  const editButton = canEditDraftAction(action) ? `<button class="ghostButton" data-edit-draft="${action.id}" type="button">编辑草稿</button>` : "";
   const reopenButton = canReopenAction(action) ? `<button class="ghostButton" data-reopen-action="${action.id}" type="button">撤回处理</button>` : "";
   const deleteButton = isDm() ? `<button class="dangerButton" data-delete-action="${action.id}" data-action-title="${escapeAttr(action.title || "未命名行动")}" type="button">删除</button>` : "";
   const observerMeta = canObserve() ? `<span>提交者：${escapeHtml(actionOwnerLabel(action))} · 执行者：${escapeHtml(actionActorLabel(action))}</span>` : "";
@@ -3530,7 +3571,7 @@ function actionCard(action) {
     <article class="actionCard">
       <div class="actionHeader">
         <div><strong>${escapeHtml(action.title || "未命名行动")}</strong><span>${statusLabel(action.status)} · 第${action.turn_number}回合 · ${action.action_kind === "government" ? (action.visibility === "public" ? "公开政府行动" : "不公开政府行动") : "私人行动"}</span>${observerMeta}</div>
-        ${submitButton || reopenButton || deleteButton ? `<div class="buttonRow">${submitButton}${reopenButton}${deleteButton}</div>` : ""}
+        ${submitButton || editButton || reopenButton || deleteButton ? `<div class="buttonRow">${submitButton}${editButton}${reopenButton}${deleteButton}</div>` : ""}
       </div>
       ${actionDetailGrid(action)}
       ${!isPrivateAction && action.result_public ? `<div class="resultBox"><strong>公开结果</strong><span>${escapeHtml(action.result_public)}</span></div>` : ""}
