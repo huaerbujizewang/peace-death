@@ -3701,7 +3701,7 @@ function addFactionLegitimacy(entries) {
     const influence = Number(faction.influence ?? 0);
     if (count > 0) {
       entries.push({
-        label: `${faction.short_name}入阁 ${count} 职`,
+        label: `${faction.short_name}入阁 ${count} 人`,
         value: roundTenth((influence / 8) * count * positiveMultiplier),
       });
     } else {
@@ -3715,14 +3715,15 @@ function addFactionLegitimacy(entries) {
 
 function governmentFactionCounts() {
   const counts = new Map();
-  const countedPositions = new Set();
+  const countedEntities = new Set();
   for (const assignment of state.data.assignments) {
     const position = assignment.positions;
     if (!position?.is_government || position.key === "duke") continue;
-    if (countedPositions.has(assignment.position_id)) continue;
+    const entityKey = `${assignment.entity_type}:${assignment.entity_id}`;
+    if (countedEntities.has(entityKey)) continue;
     const factionId = entityFactionId(assignment);
     if (!factionId) continue;
-    countedPositions.add(assignment.position_id);
+    countedEntities.add(entityKey);
     counts.set(factionId, (counts.get(factionId) ?? 0) + 1);
   }
   return counts;
